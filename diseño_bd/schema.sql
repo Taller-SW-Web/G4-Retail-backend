@@ -182,16 +182,105 @@ CREATE TRIGGER trg_ret_personal_tienda_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- -----------------------------------------------------------------------------
--- 9. ÍNDICES DE CONSULTA FRECUENTE
+-- 9. TABLA: RET_AUDITORIA_OPERACIONES
+-- Trazabilidad operativa: quién hizo qué, cuándo y desde qué terminal (F1, F5, F8)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS RET_AUDITORIA_OPERACIONES (
+    id_auditoria            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tienda_id               UUID NOT NULL,
+    usuario_id              UUID NOT NULL, -- Ref. externa lógica: Módulo Seguridad
+    caja_sesion_id          UUID NULL,
+    terminal_pos_codigo     VARCHAR(20) NOT NULL,
+    accion                  VARCHAR(20) NOT NULL
+                            CHECK (accion IN ('APERTURA', 'VENTA', 'CIERRE')),
+    estado                  VARCHAR(20) NOT NULL DEFAULT 'EXITOSO'
+                            CHECK (estado IN ('EXITOSO', 'FALLIDO', 'OBSERVADO')),
+    referencia_id           UUID NULL,     -- Ref. externa lógica opcional: pedido (Módulo Ventas)
+    detalle                 TEXT NULL,
+    detalle_json            JSONB NULL,    -- Datos estructurados (montos, saldos, medio de pago)
+    fecha_hora              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_auditoria_caja_sesion
+        FOREIGN KEY (caja_sesion_id) REFERENCES RET_CAJA_SESION(id_sesion) ON DELETE RESTRICT
+);
+
+-- -----------------------------------------------------------------------------
+-- 10. TRIGGERS DE AUDITORÍA
+-- (a) APERTURA y CIERRE se registran solos al abrir/cerrar un turno en RET_CAJA_SESION
+-- (b) RET_AUDITORIA_OPERACIONES es de solo inserción: bloquea UPDATE, DELETE y TRUNCATE
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_auditar_caja_sesion()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO RET_AUDITORIA_OPERACIONES
+            (tienda_id, usuario_id, caja_sesion_id, terminal_pos_codigo, accion, estado, detalle, detalle_json, fecha_hora)
+        VALUES
+            (NEW.tienda_id, NEW.vendedor_id, NEW.id_sesion, NEW.terminal_pos_codigo, 'APERTURA', 'EXITOSO',
+             'Apertura de turno con fondo fijo S/ ' || NEW.saldo_inicial_efectivo,
+             jsonb_build_object('saldo_inicial', NEW.saldo_inicial_efectivo),
+             NEW.fecha_hora_apertura);
+    ELSIF TG_OP = 'UPDATE' AND OLD.estado = 'ABIERTA' AND NEW.estado IN ('CERRADA', 'OBSERVADA') THEN
+        INSERT INTO RET_AUDITORIA_OPERACIONES
+            (tienda_id, usuario_id, caja_sesion_id, terminal_pos_codigo, accion, estado, detalle, detalle_json, fecha_hora)
+        VALUES
+            (NEW.tienda_id, NEW.vendedor_id, NEW.id_sesion, NEW.terminal_pos_codigo, 'CIERRE',
+             CASE WHEN NEW.estado = 'OBSERVADA' THEN 'OBSERVADO' ELSE 'EXITOSO' END,
+             'Cierre Z: declarado S/ ' || COALESCE(NEW.saldo_final_declarado::text, '-') ||
+             ', sistema S/ ' || COALESCE(NEW.saldo_final_sistema::text, '-'),
+             jsonb_build_object('saldo_declarado', NEW.saldo_final_declarado,
+                                'saldo_sistema', NEW.saldo_final_sistema,
+                                'diferencia', NEW.diferencia_saldo),
+             COALESCE(NEW.fecha_hora_cierre, CURRENT_TIMESTAMP));
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_ret_caja_sesion_audit_ins ON RET_CAJA_SESION;
+CREATE TRIGGER trg_ret_caja_sesion_audit_ins
+    AFTER INSERT ON RET_CAJA_SESION
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_auditar_caja_sesion();
+
+DROP TRIGGER IF EXISTS trg_ret_caja_sesion_audit_upd ON RET_CAJA_SESION;
+CREATE TRIGGER trg_ret_caja_sesion_audit_upd
+    AFTER UPDATE ON RET_CAJA_SESION
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_auditar_caja_sesion();
+
+CREATE OR REPLACE FUNCTION fn_auditoria_inmutable()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'RET_AUDITORIA_OPERACIONES es de solo inserción: % no permitido', TG_OP;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_ret_auditoria_inmutable ON RET_AUDITORIA_OPERACIONES;
+CREATE TRIGGER trg_ret_auditoria_inmutable
+    BEFORE UPDATE OR DELETE ON RET_AUDITORIA_OPERACIONES
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_auditoria_inmutable();
+
+DROP TRIGGER IF EXISTS trg_ret_auditoria_no_truncate ON RET_AUDITORIA_OPERACIONES;
+CREATE TRIGGER trg_ret_auditoria_no_truncate
+    BEFORE TRUNCATE ON RET_AUDITORIA_OPERACIONES
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION fn_auditoria_inmutable();
+
+-- -----------------------------------------------------------------------------
+-- 11. ÍNDICES DE CONSULTA FRECUENTE
 -- -----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_caja_sesion_tienda_vendedor ON RET_CAJA_SESION(tienda_id, vendedor_id, estado);
 CREATE INDEX IF NOT EXISTS idx_carrito_espera_tienda_estado ON RET_CARRITO_ESPERA(tienda_id, estado);
 CREATE INDEX IF NOT EXISTS idx_offline_log_estado ON RET_CONTINGENCIA_OFFLINE_LOG(tienda_id, estado_sincronizacion);
 CREATE INDEX IF NOT EXISTS idx_incidencia_tienda_estado ON RET_INCIDENCIA_INVENTARIO(tienda_id, estado_cuarentena);
 CREATE INDEX IF NOT EXISTS idx_personal_tienda_usuario ON RET_PERSONAL_TIENDA(usuario_id, tienda_id, activo);
+CREATE INDEX IF NOT EXISTS idx_auditoria_tienda_fecha ON RET_AUDITORIA_OPERACIONES(tienda_id, fecha_hora DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_usuario_accion ON RET_AUDITORIA_OPERACIONES(usuario_id, accion);
+CREATE INDEX IF NOT EXISTS idx_auditoria_caja_sesion ON RET_AUDITORIA_OPERACIONES(caja_sesion_id);
 
 -- -----------------------------------------------------------------------------
--- 10. ROW LEVEL SECURITY (RLS) & POLÍTICAS EN SUPABASE
+-- 12. ROW LEVEL SECURITY (RLS) & POLÍTICAS EN SUPABASE
 -- -----------------------------------------------------------------------------
 ALTER TABLE RET_CAJA_SESION ENABLE ROW LEVEL SECURITY;
 ALTER TABLE RET_MOVIMIENTO_CAJA ENABLE ROW LEVEL SECURITY;
@@ -201,6 +290,7 @@ ALTER TABLE RET_SOLICITUD_CAMBIO_MOSTRADOR ENABLE ROW LEVEL SECURITY;
 ALTER TABLE RET_INCIDENCIA_INVENTARIO ENABLE ROW LEVEL SECURITY;
 ALTER TABLE RET_CONTINGENCIA_OFFLINE_LOG ENABLE ROW LEVEL SECURITY;
 ALTER TABLE RET_PERSONAL_TIENDA ENABLE ROW LEVEL SECURITY;
+ALTER TABLE RET_AUDITORIA_OPERACIONES ENABLE ROW LEVEL SECURITY;
 
 -- Políticas permisivas por defecto para clientes autenticados (Supabase Auth / JWT)
 DO $$ 
@@ -244,4 +334,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ret_personal_tienda' AND policyname = 'ret_personal_tienda_auth_policy') THEN
         CREATE POLICY "ret_personal_tienda_auth_policy" ON RET_PERSONAL_TIENDA FOR ALL TO authenticated USING (true) WITH CHECK (true);
     END IF;
+    -- RET_AUDITORIA_OPERACIONES
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ret_auditoria_operaciones' AND policyname = 'ret_auditoria_operaciones_auth_policy') THEN
+        -- Auditoría: solo lectura e inserción (nunca UPDATE/DELETE)
+        CREATE POLICY "ret_auditoria_operaciones_auth_policy" ON RET_AUDITORIA_OPERACIONES FOR SELECT TO authenticated USING (true);
+        CREATE POLICY "ret_auditoria_operaciones_insert_policy" ON RET_AUDITORIA_OPERACIONES FOR INSERT TO authenticated WITH CHECK (true);
+    END IF;
+
 END $$;
