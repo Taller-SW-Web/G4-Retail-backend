@@ -84,7 +84,7 @@ erDiagram
         uuid pedido_id_origen "ID logico de la orden original (Ventas)"
         uuid variante_sku_devuelta_id "ID logico de la prenda que devuelve el cliente"
         uuid cliente_id "ID logico del cliente (Seguridad)"
-        string motivo_cambio "CAMBIO_TALLA, CAMBIO_MODELO, FALLA_FABRICA"
+        string motivo_cambio "CAMBIO_TALLA, DEFECTO_FABRICA, DISCONFORMIDAD"
         boolean inspeccion_etiquetas "Check: etiquetas y rotulado intactos"
         boolean inspeccion_sin_uso "Check: prenda limpia sin senales de uso corporal"
         boolean inspeccion_empaque "Check: caja o bolsa original presente"
@@ -100,7 +100,7 @@ erDiagram
         uuid vendedor_reporta_id "ID logico del colaborador que detecta la merma"
         uuid variante_sku_id "ID logico de la prenda afectada (Productos)"
         string codigo_barras "EAN-13 o SKU escaneado de la prenda"
-        string tipo_falla "MANCHADO_PROBADOR, COSTURA_ROTA, EXTRAVIO_NO_UBICADO, DEFECTO_FABRICA"
+        string tipo_falla "MANCHADO_PROBADOR, COSTURA_ROTA, DESCOLORIDO, EXTRAVIO"
         text detalle_observacion "Explicacion circunstancial del dano o quiebre"
         string evidencia_foto_url "URL o path de fotografia de la prenda danada"
         string estado_cuarentena "EN_CUARENTENA, DERIVADO_ALMACEN, DESCARTADO, RECHAZADO"
@@ -112,7 +112,7 @@ erDiagram
         uuid tienda_id "ID de la sucursal fisica"
         string terminal_pos_codigo "Terminal que emitio la venta sin conexion"
         string venta_local_uuid "UUID generado localmente en el navegador (IndexedDB)"
-        jsonb payload_json_orden "Payload transaccional completo en formato JSONB"
+        text payload_json_orden "Payload transaccional completo en formato JSON"
         string firma_hash_seguridad "Hash SHA-256 de integridad para prevenir alteraciones"
         string estado_sincronizacion "PENDIENTE, RESINCRONIZADO, CONFLICTO"
         timestamp fecha_emision_offline "Momento en que se cobro al cliente offline"
@@ -130,6 +130,21 @@ erDiagram
         timestamp created_at "Auditoria de creacion"
         timestamp updated_at "Auditoria de actualizacion"
     }
+    RET_AUDITORIA_OPERACIONES {
+        uuid id_auditoria PK "Identificador unico del registro de auditoria"
+        uuid tienda_id "ID de la sucursal fisica"
+        uuid usuario_id "ID logico del usuario que ejecuta la accion (Seguridad)"
+        uuid caja_sesion_id FK "Turno de caja asociado (opcional)"
+        string terminal_pos_codigo "Terminal POS de origen"
+        string accion "APERTURA, VENTA, CIERRE"
+        string estado "EXITOSO, FALLIDO, OBSERVADO"
+        uuid referencia_id "ID logico opcional del pedido (Ventas)"
+        text detalle "Descripcion de la operacion"
+        jsonb detalle_json "Datos estructurados (montos, saldos, medio de pago)"
+        timestamp fecha_hora "Fecha y hora de la operacion"
+    }
+
+    RET_CAJA_SESION ||--o{ RET_AUDITORIA_OPERACIONES : "genera"
 ```
 
 ---
@@ -279,6 +294,25 @@ Gestiona la asignación y perfiles operativos del personal dentro de cada sucurs
 
 ---
 
+### Tabla 9: `RET_AUDITORIA_OPERACIONES`
+Registra la trazabilidad operativa del mostrador: apertura de turno, ventas y cierre, con usuario, terminal y resultado. Es una tabla **de solo inserción** (inmutable): los registros de apertura y cierre los genera automáticamente un trigger sobre `RET_CAJA_SESION`.
+
+| Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
+| :--- | :--- | :---: | :--- | :--- |
+| `id_auditoria` | `UUID` | No | `PRIMARY KEY` | Identificador único del registro de auditoría |
+| `tienda_id` | `UUID` | No | — | Identificador de la sucursal física |
+| `usuario_id` | `UUID` | No | — (Ref. lógica Seguridad) | Usuario que ejecutó la operación |
+| `caja_sesion_id` | `UUID` | Sí | `FOREIGN KEY` → `RET_CAJA_SESION(id_sesion)` `ON DELETE RESTRICT` | Turno de caja asociado |
+| `terminal_pos_codigo` | `VARCHAR(20)` | No | — | Terminal POS de origen (ej. `POS-01`) |
+| `accion` | `VARCHAR(20)` | No | `CHECK IN ('APERTURA', 'VENTA', 'CIERRE')` | Tipo de operación registrada |
+| `estado` | `VARCHAR(20)` | No | `DEFAULT 'EXITOSO'`, `CHECK IN ('EXITOSO', 'FALLIDO', 'OBSERVADO')` | Resultado de la operación |
+| `referencia_id` | `UUID` | Sí | — (Ref. lógica Ventas) | Pedido asociado, si aplica |
+| `detalle` | `TEXT` | Sí | — | Descripción o motivo de la operación |
+| `detalle_json` | `JSONB` | Sí | — | Datos estructurados de la operación (montos, saldos, medio de pago) |
+| `fecha_hora` | `TIMESTAMPTZ` | No | `DEFAULT CURRENT_TIMESTAMP` | Momento en que ocurrió la operación |
+
+---
+
 ## 4. Índices de Rendimiento Recomendados
 
 ```sql
@@ -296,17 +330,22 @@ CREATE INDEX idx_incidencia_tienda_estado ON RET_INCIDENCIA_INVENTARIO(tienda_id
 
 -- Resolución rápida de perfiles operativos del personal de tienda
 CREATE INDEX idx_personal_tienda_usuario ON RET_PERSONAL_TIENDA(usuario_id, tienda_id, activo);
+
+-- Consulta cronológica de auditoría por tienda y por usuario/acción
+CREATE INDEX idx_auditoria_tienda_fecha ON RET_AUDITORIA_OPERACIONES(tienda_id, fecha_hora DESC);
+CREATE INDEX idx_auditoria_usuario_accion ON RET_AUDITORIA_OPERACIONES(usuario_id, accion);
+CREATE INDEX idx_auditoria_caja_sesion ON RET_AUDITORIA_OPERACIONES(caja_sesion_id);
 ```
 
 ---
 
 ## 5. Triggers de Auditoría y Políticas de Seguridad (RLS)
 
-Implementados directamente en [`schema.sql`](file:///c:/Users/gidaj/Documents/Antigravity/G4-Retail-specs/dise%C3%B1o/schema.sql):
-
-1. **Triggers de actualización automática (`updated_at`)**:
-   - `trg_ret_caja_sesion_updated_at`: Actualiza `updated_at` en `RET_CAJA_SESION` antes de cada `UPDATE`.
-   - `trg_ret_personal_tienda_updated_at`: Actualiza `updated_at` en `RET_PERSONAL_TIENDA` antes de cada `UPDATE`.
-2. **Row Level Security (RLS)**:
-   - Todas las 8 tablas tienen RLS habilitado (`ENABLE ROW LEVEL SECURITY`).
-   - Se configuran políticas de acceso autenticado (`authenticated`) compatibles con Supabase Auth / JWT.
+1. **Triggers de actualización automática (`updated_at`)** en `RET_CAJA_SESION` y `RET_PERSONAL_TIENDA`.
+2. **Auditoría automática** (`fn_auditar_caja_sesion`):
+   - `trg_ret_caja_sesion_audit_ins`: al abrir un turno (`INSERT` en `RET_CAJA_SESION`) registra una `APERTURA` en `RET_AUDITORIA_OPERACIONES`.
+   - `trg_ret_caja_sesion_audit_upd`: al cerrar un turno (`ABIERTA` → `CERRADA`/`OBSERVADA`) registra un `CIERRE` (`EXITOSO` u `OBSERVADO`).
+3. **Auditoría inmutable** (`fn_auditoria_inmutable`):
+   - `trg_ret_auditoria_inmutable` y `trg_ret_auditoria_no_truncate` bloquean `UPDATE`, `DELETE` y `TRUNCATE` sobre `RET_AUDITORIA_OPERACIONES` (solo inserción). La FK hacia `RET_CAJA_SESION` es `ON DELETE RESTRICT`, por lo que un turno con rastro de auditoría no se puede borrar.
+4. **Row Level Security (RLS)**:
+   - Todas las 9 tablas tienen RLS habilitado (`ENABLE ROW LEVEL SECURITY`); `RET_AUDITORIA_OPERACIONES` solo admite `SELECT` e `INSERT`.
