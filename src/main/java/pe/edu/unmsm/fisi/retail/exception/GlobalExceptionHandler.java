@@ -38,6 +38,12 @@ public class GlobalExceptionHandler {
                 ex.getMessage(), peticion, List.of());
     }
 
+    @ExceptionHandler(AccesoDenegadoException.class)
+    public ProblemDetail manejarAccesoDenegado(AccesoDenegadoException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.FORBIDDEN, ex.getCodigo(), "Acceso denegado",
+                ex.getMessage(), peticion, List.of());
+    }
+
     @ExceptionHandler(ReglaNegocioException.class)
     public ProblemDetail manejarReglaNegocio(ReglaNegocioException ex, HttpServletRequest peticion) {
         return construir(HttpStatus.UNPROCESSABLE_ENTITY, ex.getCodigo(), "Regla de negocio no cumplida",
