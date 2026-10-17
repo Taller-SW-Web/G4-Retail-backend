@@ -279,7 +279,7 @@ class CajaServiceTest {
         return PersonalTienda.builder()
                 .idPersonal(UUID.randomUUID())
                 .usuarioId(USUARIO)
-                .tiendaId(TIENDA)
+                .tiendaId(TIENDA.toString())
                 .codigoVendedor("VEN-001")
                 .perfilTienda(PerfilTienda.VENDEDOR)
                 .activo(true)

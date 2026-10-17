@@ -30,7 +30,7 @@ public class PersonalTiendaInitializer implements ApplicationRunner {
     private static final UUID USUARIO_G7 = UUID.fromString("b9e222a5-cf86-4c95-9611-891886160821");
     private static final UUID USUARIO_VENDEDOR_SEMILLA = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000001");
     private static final UUID USUARIO_SUPERVISOR_SEMILLA = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000004");
-    private static final UUID TIENDA_DEFAULT = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String TIENDA_DEFAULT = "TIENDA-MIRAFLORES";
 
     @Override
     @Transactional

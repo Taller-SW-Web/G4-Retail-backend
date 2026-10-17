@@ -53,7 +53,7 @@ public class PersonalTienda {
      * porque el cambio afecta a la base en Supabase y al resto de tablas que referencian la tienda.</p>
      */
     @Column(name = "tienda_id", nullable = false)
-    private UUID tiendaId;
+    private String tiendaId;
 
     /** Codigo visible del vendedor, por ejemplo {@code VEN-001}. */
     @Column(name = "codigo_vendedor", nullable = false, length = 20)

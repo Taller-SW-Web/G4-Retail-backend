@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(LocalDatabaseConfig.class)
 class PersonalTiendaRepositoryTest {
 
-    private static final UUID TIENDA_MIRAFLORES = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String TIENDA_MIRAFLORES = "TIENDA-MIRAFLORES";
 
     @Autowired
     private PersonalTiendaRepository repositorio;
@@ -67,7 +67,7 @@ class PersonalTiendaRepositoryTest {
         entityManager.persistAndFlush(personal(usuarioId, "SUP-001", PerfilTienda.SUPERVISOR, true));
 
         assertThat(repositorio.findByUsuarioIdAndTiendaIdAndActivoTrue(usuarioId, TIENDA_MIRAFLORES)).isPresent();
-        assertThat(repositorio.findByUsuarioIdAndTiendaIdAndActivoTrue(usuarioId, UUID.randomUUID())).isEmpty();
+        assertThat(repositorio.findByUsuarioIdAndTiendaIdAndActivoTrue(usuarioId, "OTRA-TIENDA")).isEmpty();
     }
 
     private PersonalTienda personal(UUID usuarioId, String codigo, PerfilTienda perfil, boolean activo) {

@@ -35,7 +35,7 @@ public record PerfilResponse(
                 personal.getUsuarioId().toString(),
                 personal.getCodigoVendedor(),
                 personal.getPerfilTienda().name(),
-                personal.getTiendaId().toString(),
+                personal.getTiendaId(),
                 personal.isActivo());
     }
 }
