@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,8 +22,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p><strong>Responsabilidades de este servicio (RF-13, RF-14, RF-15):</strong></p>
  * <ul>
+ *   <li>Validar que el turno de caja este abierto antes de procesar la venta.</li>
  *   <li>Calcular subtotal, IGV 18 % y total a partir de los items de la venta.</li>
- *   <li>Validar que el monto pagado sea coherente con los items declarados.</li>
+ *   <li>Validar el pago: para efectivo, que el monto recibido cubra el total (y calcular vuelto);
+ *       para tarjeta, que la referencia de operacion sea valida.</li>
  *   <li>Generar el correlativo incremental de la boleta B001 (o factura F001).</li>
  *   <li>Garantizar idempotencia: la misma {@code Idempotency-Key} siempre devuelve
  *       la misma {@link VentaResponse}.</li>
@@ -35,9 +38,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li>Apertura o cierre de turnos de caja — F8 CajaService.</li>
  *   <li>Descuento de stock de inventario — F2 CatalogoService.</li>
  * </ul>
- *
- * <p>TODO: Cuando Angie (F8) tenga {@code CajaService} listo, agregar validacion de turno
- * abierto antes de ejecutar la venta. Coordinar el {@code turnoId} como parte del request.</p>
  */
 @Slf4j
 @Service
@@ -47,11 +47,11 @@ public class VentaService {
     /** IGV vigente en Peru: 18 %. */
     private static final BigDecimal TASA_IGV = new BigDecimal("0.18");
 
-    /** Tolerancia de diferencia entre el monto declarado y el calculado: S/ 0.02 por redondeo. */
-    private static final BigDecimal TOLERANCIA_REDONDEO = new BigDecimal("0.02");
-
     /** Monto a partir del cual una boleta requiere DNI del cliente (SUNAT). */
     private static final BigDecimal MONTO_REQUIERE_DNI = new BigDecimal("700.00");
+
+    /** RUC mock de la empresa para el QR de verificacion SUNAT (Semana 8). */
+    private static final String RUC_EMPRESA_MOCK = "20123456789";
 
     /** Contador del correlativo de boleta (persistencia en memoria para el parcial;
      *  TODO: migrar a secuencia en Supabase antes del final). */
@@ -64,7 +64,26 @@ public class VentaService {
     /** Cache de idempotencia en memoria (llave → respuesta ya generada). */
     private final Map<String, VentaResponse> cacheIdempotencia = new ConcurrentHashMap<>();
 
+    /**
+     * Mock Semana 8: conjunto de turnoIds abiertos en memoria.
+     * Cuando Angie (F8) tenga {@code CajaService} listo, reemplazar por
+     * consulta a la tabla {@code RET_CAJA_SESION}.
+     */
+    private final Set<String> turnosAbiertos = ConcurrentHashMap.newKeySet();
+
     // ── API publica ──────────────────────────────────────────────────────────
+
+    /**
+     * Registra un turno como abierto (mock Semana 8).
+     *
+     * <p>Este metodo existe solo hasta que CajaService implemente la apertura real.
+     * La validacion de turno en {@link #registrarVenta} consulta este set.</p>
+     *
+     * @param turnoId identificador del turno que se marca como abierto
+     */
+    public void abrirTurnoMock(String turnoId) {
+        turnosAbiertos.add(turnoId);
+    }
 
     /**
      * Registra la venta y emite el comprobante correspondiente.
@@ -73,7 +92,7 @@ public class VentaService {
      * @param idempotencyKey clave unica del cliente para garantizar exactamente un registro
      *                       aunque la red repita la peticion
      * @return respuesta con el {@code pedidoId}, el comprobante emitido y el ticket de regalo
-     * @throws ReglaNegocioException si hay incoherencia de montos o violacion de normativa SUNAT
+     * @throws ReglaNegocioException si hay incoherencia de montos, turno cerrado o violacion SUNAT
      */
     public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
 
@@ -82,6 +101,9 @@ public class VentaService {
             log.info("Idempotencia activada para llave={}", idempotencyKey);
             return cacheIdempotencia.get(idempotencyKey);
         }
+
+        // 0. Validar turno de caja abierto (precondicion del contrato §5.5)
+        validarTurnoAbierto(request.turnoId());
 
         // 1. Calcular totales fiscales
         BigDecimal totalCalculado = calcularTotal(request);
@@ -96,6 +118,7 @@ public class VentaService {
                 : correlativoBoleta.getAndIncrement();
         String correlativo = String.format("%05d", numCorrelativo);
         String pedidoId = generarPedidoId();
+        String ventaId = UUID.randomUUID().toString();
 
         // 3. Calcular descomposicion fiscal
         BigDecimal igv = totalCalculado
@@ -103,18 +126,44 @@ public class VentaService {
                 .divide(BigDecimal.ONE.add(TASA_IGV), 2, RoundingMode.HALF_UP);
         BigDecimal subtotal = totalCalculado.subtract(igv).setScale(2, RoundingMode.HALF_UP);
 
-        // 4. Armar comprobante
+        // 4. Calcular vuelto segun medio de pago
+        String medioPago = request.pago().medioPago();
+        BigDecimal montoRecibido;
+        BigDecimal vuelto;
+        if ("EFECTIVO".equals(medioPago)) {
+            montoRecibido = request.pago().montoRecibidoEfectivo();
+            vuelto = montoRecibido.subtract(totalCalculado).setScale(2, RoundingMode.HALF_UP);
+        } else {
+            montoRecibido = totalCalculado;
+            vuelto = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+
+        // 5. Armar cadena QR de verificacion SUNAT
+        String doc = request.comprobante().numeroDocumento() != null
+                ? request.comprobante().numeroDocumento() : "";
+        String qr = String.join("|",
+                RUC_EMPRESA_MOCK, serie, correlativo,
+                igv.toPlainString(), totalCalculado.toPlainString(), doc);
+
+        // 6. Armar comprobante
         OffsetDateTime ahora = OffsetDateTime.now();
         VentaResponse.ComprobanteEmitido comprobante = new VentaResponse.ComprobanteEmitido(
+                request.comprobante().tipo(),
                 serie,
                 correlativo,
-                ahora,
                 subtotal,
                 igv,
-                totalCalculado
+                totalCalculado,
+                ahora,
+                qr
         );
 
-        // 5. Ticket de regalo (opcional)
+        // 7. Armar resumen de pago
+        VentaResponse.PagoResumen pagoResumen = new VentaResponse.PagoResumen(
+                medioPago, montoRecibido, vuelto
+        );
+
+        // 8. Ticket de regalo (opcional)
         VentaResponse.TicketRegalo ticketRegalo = null;
         if (request.emitirTicketRegalo()) {
             ticketRegalo = new VentaResponse.TicketRegalo(
@@ -123,17 +172,40 @@ public class VentaService {
             );
         }
 
-        VentaResponse respuesta = new VentaResponse(pedidoId, comprobante, ticketRegalo);
+        VentaResponse respuesta = new VentaResponse(
+                ventaId, pedidoId, "PAGADO", pagoResumen, comprobante, ticketRegalo
+        );
 
-        // 6. Guardar en cache de idempotencia y loguear auditoria
+        // 9. Guardar en cache de idempotencia y loguear auditoria
         cacheIdempotencia.put(idempotencyKey, respuesta);
-        log.info("Venta registrada: pedidoId={} serie={} correlativo={} canal={} vendedor={} total={}",
-                pedidoId, serie, correlativo, request.canal(), request.vendedorId(), totalCalculado);
+        log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={} vuelto={}",
+                ventaId, pedidoId, serie, correlativo, request.terminalPos(), totalCalculado, vuelto);
 
         return respuesta;
     }
 
     // ── Metodos privados de calculo ─────────────────────────────────────────
+
+    /**
+     * Valida que el turno de caja este abierto antes de procesar la venta.
+     *
+     * <p>Mock Semana 8: verifica contra un {@link Set} en memoria. Cuando Angie (F8)
+     * implemente {@code CajaService}, reemplazar por consulta a {@code RET_CAJA_SESION}
+     * con estado {@code ABIERTA}.</p>
+     *
+     * @throws ReglaNegocioException con codigo {@code TURNO_NO_ABIERTO}
+     *         (el contrato indica 409, pero se usa 422 temporalmente hasta que exista
+     *          una excepcion especifica para conflictos de estado)
+     */
+    void validarTurnoAbierto(String turnoId) {
+        if (!turnosAbiertos.contains(turnoId)) {
+            throw new ReglaNegocioException(
+                    "TURNO_NO_ABIERTO",
+                    "No hay un turno de caja abierto con id " + turnoId +
+                    ". Debe abrir un turno antes de registrar ventas."
+            );
+        }
+    }
 
     /**
      * Suma {@code cantidad × precioFinal} de cada item y redondea a 2 decimales.
@@ -149,19 +221,39 @@ public class VentaService {
     }
 
     /**
-     * Verifica que el monto declarado en el pago no difiera del total calculado por mas
-     * de la tolerancia de redondeo ({@value #TOLERANCIA_REDONDEO} S/).
+     * Valida el pago segun el medio utilizado (contrato §5.5, RF-13):
+     * <ul>
+     *   <li>EFECTIVO: {@code montoRecibidoEfectivo >= totalPagar}. Si no cubre, lanza
+     *       {@code MONTO_INSUFICIENTE} indicando el faltante.</li>
+     *   <li>TARJETA_POS: {@code referenciaOperacion} obligatoria, minimo 4 caracteres.</li>
+     * </ul>
      *
-     * @throws ReglaNegocioException si la diferencia supera la tolerancia
+     * @throws ReglaNegocioException si el pago no cumple las reglas del medio seleccionado
      */
     void validarMontoPago(VentaRequest request, BigDecimal totalCalculado) {
-        BigDecimal diferencia = request.pago().monto().subtract(totalCalculado).abs();
-        if (diferencia.compareTo(TOLERANCIA_REDONDEO) > 0) {
-            throw new ReglaNegocioException(
-                    "MONTO_INCONSISTENTE",
-                    String.format("El monto del pago declarado (S/ %s) no coincide con el total calculado (S/ %s)",
-                            request.pago().monto(), totalCalculado)
-            );
+        String medioPago = request.pago().medioPago();
+
+        if ("EFECTIVO".equals(medioPago)) {
+            BigDecimal recibido = request.pago().montoRecibidoEfectivo();
+            if (recibido == null || recibido.compareTo(totalCalculado) < 0) {
+                BigDecimal faltante = recibido == null
+                        ? totalCalculado
+                        : totalCalculado.subtract(recibido).setScale(2, RoundingMode.HALF_UP);
+                throw new ReglaNegocioException(
+                        "MONTO_INSUFICIENTE",
+                        String.format(
+                                "El monto recibido en efectivo (S/ %s) es menor al total a pagar (S/ %s). Faltan S/ %s",
+                                recibido != null ? recibido : "0.00", totalCalculado, faltante)
+                );
+            }
+        } else if ("TARJETA_POS".equals(medioPago)) {
+            String ref = request.pago().referenciaOperacion();
+            if (ref == null || ref.trim().length() < 4) {
+                throw new ReglaNegocioException(
+                        "REFERENCIA_VOUCHER_INVALIDA",
+                        "Para pago con tarjeta, la referencia de operacion es obligatoria y debe tener al menos 4 caracteres"
+                );
+            }
         }
     }
 

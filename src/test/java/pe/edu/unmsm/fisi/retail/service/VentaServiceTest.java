@@ -15,19 +15,20 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.within;
-import static java.math.BigDecimal.ONE;
 
 /**
  * Tests unitarios de {@link VentaService} — F5 (RF-13, RF-14, RF-15).
  *
  * <p>No usa Spring context: instancia el servicio directamente para mayor velocidad.
- * Cubre los tres ejes del examen parcial:</p>
+ * Cubre los ejes del examen parcial:</p>
  * <ol>
  *   <li>Calculo fiscal correcto (IGV 18 %).</li>
- *   <li>Calculo de vuelto en pago efectivo.</li>
+ *   <li>Calculo de vuelto en pago efectivo (montoRecibidoEfectivo - total).</li>
+ *   <li>Pago con tarjeta (vuelto = 0, referencia obligatoria).</li>
  *   <li>Idempotencia: misma llave = misma respuesta.</li>
  *   <li>Normativa SUNAT: boleta &ge; S/700 requiere DNI; factura requiere RUC.</li>
+ *   <li>Validacion de turno de caja abierto.</li>
+ *   <li>Estructura de respuesta alineada con el contrato v0.4 §5.5.</li>
  * </ol>
  */
 @DisplayName("VentaService — F5 Tests Unitarios")
@@ -35,9 +36,13 @@ class VentaServiceTest {
 
     private VentaService servicio;
 
+    /** Turno mock que se abre en cada test para que las ventas puedan procesarse. */
+    private static final String TURNO_ABIERTO = "turno-test-001";
+
     @BeforeEach
     void setUp() {
         servicio = new VentaService();
+        servicio.abrirTurnoMock(TURNO_ABIERTO);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -46,12 +51,12 @@ class VentaServiceTest {
         return new VentaRequest.ItemVentaDto(sku, cantidad, new BigDecimal(precio));
     }
 
-    private VentaRequest.PagoDto pagoEfectivo(String monto) {
-        return new VentaRequest.PagoDto("EFECTIVO", new BigDecimal(monto), null);
+    private VentaRequest.PagoDto pagoEfectivo(String montoRecibido) {
+        return new VentaRequest.PagoDto("EFECTIVO", new BigDecimal(montoRecibido), null, null);
     }
 
-    private VentaRequest.PagoDto pagoTarjeta(String monto) {
-        return new VentaRequest.PagoDto("TARJETA_POS", new BigDecimal(monto), "OP-12345");
+    private VentaRequest.PagoDto pagoTarjeta() {
+        return new VentaRequest.PagoDto("TARJETA_POS", null, null, "OP-12345");
     }
 
     private VentaRequest.ComprobanteDto boleta(String doc) {
@@ -62,18 +67,20 @@ class VentaServiceTest {
         return new VentaRequest.ComprobanteDto("FACTURA", ruc, "Empresa SAC");
     }
 
+    /** Crea un request con turno abierto y datos basicos para los tests. */
     private VentaRequest request(List<VentaRequest.ItemVentaDto> items,
                                   VentaRequest.PagoDto pago,
                                   VentaRequest.ComprobanteDto comprobante) {
         return new VentaRequest(
-                "RETAIL",
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                "POS-01",
+                TURNO_ABIERTO,
+                "cliente-test-001",
                 items,
                 pago,
                 comprobante,
-                false
+                false,
+                null,
+                null
         );
     }
 
@@ -135,39 +142,120 @@ class VentaServiceTest {
         }
     }
 
-    // ── Tests de validacion de monto ─────────────────────────────────────────
+    // ── Tests de vuelto y pago ───────────────────────────────────────────────
 
     @Nested
-    @DisplayName("Validacion del monto de pago")
-    class ValidacionMonto {
+    @DisplayName("Calculo de vuelto y validacion de pago")
+    class CalculoVuelto {
 
         @Test
-        @DisplayName("Monto declarado exacto pasa la validacion sin excepcion")
-        void montoExactoEsValido() {
+        @DisplayName("Pago en efectivo con monto exacto produce vuelto = 0")
+        void pagoExactoVueltoCero() {
             VentaRequest req = request(
-                    List.of(item("SKU-001", 2, "50.00")),
+                    List.of(item("SKU-001", 1, "100.00")),
                     pagoEfectivo("100.00"),
                     boleta("12345678")
             );
 
-            // No debe lanzar excepcion
-            servicio.validarMontoPago(req, new BigDecimal("100.00"));
+            VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pago().medioPago()).isEqualTo("EFECTIVO");
+            assertThat(respuesta.pago().montoRecibido()).isEqualByComparingTo("100.00");
+            assertThat(respuesta.pago().vuelto()).isEqualByComparingTo("0.00");
         }
 
         @Test
-        @DisplayName("Diferencia mayor a tolerancia lanza ReglaNegocioException MONTO_INCONSISTENTE")
-        void diferenciaMayorAToleranciaCausaExcepcion() {
+        @DisplayName("Pago en efectivo con excedente calcula vuelto = montoRecibido - total")
+        void pagoConExcedenteCalculaVuelto() {
+            // Total = S/83.50, paga con S/100.00, vuelto = S/16.50
             VentaRequest req = request(
-                    List.of(item("SKU-001", 1, "100.00")),
-                    pagoEfectivo("200.00"),   // declara S/200 pero el total real es S/100
+                    List.of(item("SKU-001", 1, "83.50")),
+                    pagoEfectivo("100.00"),
                     boleta("12345678")
             );
 
-            assertThatThrownBy(() -> servicio.validarMontoPago(req, new BigDecimal("100.00")))
+            VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pago().montoRecibido()).isEqualByComparingTo("100.00");
+            assertThat(respuesta.pago().vuelto()).isEqualByComparingTo("16.50");
+        }
+
+        @Test
+        @DisplayName("Pago en efectivo con billete grande calcula vuelto correcto")
+        void pagoConBilleteDe200() {
+            // Total = S/118.00, paga con S/200.00, vuelto = S/82.00
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "118.00")),
+                    pagoEfectivo("200.00"),
+                    boleta("12345678")
+            );
+
+            VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pago().montoRecibido()).isEqualByComparingTo("200.00");
+            assertThat(respuesta.pago().vuelto()).isEqualByComparingTo("82.00");
+        }
+
+        @Test
+        @DisplayName("Pago en efectivo insuficiente lanza MONTO_INSUFICIENTE")
+        void pagoInsuficienteCausaExcepcion() {
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "200.00")),
+                    pagoEfectivo("150.00"),
+                    boleta("12345678")
+            );
+
+            assertThatThrownBy(() -> servicio.registrarVenta(req, UUID.randomUUID().toString()))
                     .isInstanceOf(ReglaNegocioException.class)
-                    .hasMessageContaining("100")
+                    .hasMessageContaining("150")
                     .extracting(e -> ((ReglaNegocioException) e).getCodigo())
-                    .isEqualTo("MONTO_INCONSISTENTE");
+                    .isEqualTo("MONTO_INSUFICIENTE");
+        }
+
+        @Test
+        @DisplayName("Pago con tarjeta POS tiene vuelto = 0 y monto = total")
+        void pagoTarjetaVueltoCero() {
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "100.00")),
+                    pagoTarjeta(),
+                    boleta("12345678")
+            );
+
+            VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pago().medioPago()).isEqualTo("TARJETA_POS");
+            assertThat(respuesta.pago().montoRecibido()).isEqualByComparingTo("100.00");
+            assertThat(respuesta.pago().vuelto()).isEqualByComparingTo("0.00");
+        }
+
+        @Test
+        @DisplayName("Pago con tarjeta sin referencia lanza REFERENCIA_VOUCHER_INVALIDA")
+        void tarjetaSinReferenciaCausaExcepcion() {
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "100.00")),
+                    new VentaRequest.PagoDto("TARJETA_POS", null, null, null),
+                    boleta("12345678")
+            );
+
+            assertThatThrownBy(() -> servicio.registrarVenta(req, UUID.randomUUID().toString()))
+                    .isInstanceOf(ReglaNegocioException.class)
+                    .extracting(e -> ((ReglaNegocioException) e).getCodigo())
+                    .isEqualTo("REFERENCIA_VOUCHER_INVALIDA");
+        }
+
+        @Test
+        @DisplayName("Pago con tarjeta con referencia corta (< 4 chars) lanza REFERENCIA_VOUCHER_INVALIDA")
+        void tarjetaReferenciaCorta() {
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "100.00")),
+                    new VentaRequest.PagoDto("TARJETA_POS", null, null, "AB"),
+                    boleta("12345678")
+            );
+
+            assertThatThrownBy(() -> servicio.registrarVenta(req, UUID.randomUUID().toString()))
+                    .isInstanceOf(ReglaNegocioException.class)
+                    .extracting(e -> ((ReglaNegocioException) e).getCodigo())
+                    .isEqualTo("REFERENCIA_VOUCHER_INVALIDA");
         }
     }
 
@@ -284,11 +372,12 @@ class VentaServiceTest {
         @DisplayName("Sin emitirTicketRegalo el campo ticketRegalo es null")
         void sinRegaloTicketEsNull() {
             VentaRequest req = new VentaRequest(
-                    "RETAIL", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                    "POS-01", TURNO_ABIERTO, "cliente-test-001",
                     List.of(item("SKU-001", 1, "118.00")),
                     pagoEfectivo("118.00"),
                     boleta("12345678"),
-                    false   // <-- sin regalo
+                    false,   // <-- sin regalo
+                    null, null
             );
 
             VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
@@ -300,11 +389,12 @@ class VentaServiceTest {
         @DisplayName("Con emitirTicketRegalo=true el ticket tiene codigoCanje no vacio")
         void conRegaloTicketTieneCodigoCanje() {
             VentaRequest req = new VentaRequest(
-                    "RETAIL", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                    "POS-01", TURNO_ABIERTO, "cliente-test-001",
                     List.of(item("SKU-001", 1, "118.00")),
                     pagoEfectivo("118.00"),
                     boleta("12345678"),
-                    true   // <-- con regalo
+                    true,   // <-- con regalo
+                    null, null
             );
 
             VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
@@ -312,6 +402,83 @@ class VentaServiceTest {
             assertThat(respuesta.ticketRegalo()).isNotNull();
             assertThat(respuesta.ticketRegalo().codigoCanje()).isNotBlank();
             assertThat(respuesta.ticketRegalo().fechaLimiteCambio()).isNotNull();
+        }
+    }
+
+    // ── Tests de turno de caja ───────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("Validacion de turno de caja")
+    class ValidacionTurno {
+
+        @Test
+        @DisplayName("Turno no registrado como abierto lanza TURNO_NO_ABIERTO")
+        void turnoNoAbiertoLanzaExcepcion() {
+            VentaRequest req = new VentaRequest(
+                    "POS-01", "turno-inexistente", "cliente-test-001",
+                    List.of(item("SKU-001", 1, "118.00")),
+                    pagoEfectivo("118.00"),
+                    boleta("12345678"),
+                    false, null, null
+            );
+
+            assertThatThrownBy(() -> servicio.registrarVenta(req, UUID.randomUUID().toString()))
+                    .isInstanceOf(ReglaNegocioException.class)
+                    .hasMessageContaining("turno-inexistente")
+                    .extracting(e -> ((ReglaNegocioException) e).getCodigo())
+                    .isEqualTo("TURNO_NO_ABIERTO");
+        }
+
+        @Test
+        @DisplayName("Turno abierto permite registrar la venta correctamente")
+        void turnoAbiertoPermiteVenta() {
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "118.00")),
+                    pagoEfectivo("118.00"),
+                    boleta("12345678")
+            );
+
+            VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pedidoId()).isNotBlank();
+            assertThat(respuesta.estadoPedido()).isEqualTo("PAGADO");
+        }
+    }
+
+    // ── Tests de estructura de respuesta (contrato v0.4) ────────────────────
+
+    @Nested
+    @DisplayName("Estructura de respuesta (contrato v0.4 §5.5)")
+    class EstructuraRespuesta {
+
+        @Test
+        @DisplayName("La respuesta incluye ventaId, pedidoId, estadoPedido, pago con vuelto y comprobante con QR")
+        void respuestaTieneCamposDelContrato() {
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "118.00")),
+                    pagoEfectivo("200.00"),
+                    boleta("12345678")
+            );
+
+            VentaResponse respuesta = servicio.registrarVenta(req, UUID.randomUUID().toString());
+
+            // Campos de cabecera
+            assertThat(respuesta.ventaId()).isNotBlank();
+            assertThat(respuesta.pedidoId()).startsWith("VNT-");
+            assertThat(respuesta.estadoPedido()).isEqualTo("PAGADO");
+
+            // Pago con vuelto correcto
+            assertThat(respuesta.pago()).isNotNull();
+            assertThat(respuesta.pago().medioPago()).isEqualTo("EFECTIVO");
+            assertThat(respuesta.pago().montoRecibido()).isEqualByComparingTo("200.00");
+            assertThat(respuesta.pago().vuelto()).isEqualByComparingTo("82.00");
+
+            // Comprobante con tipo y QR
+            assertThat(respuesta.comprobante().tipo()).isEqualTo("BOLETA");
+            assertThat(respuesta.comprobante().serie()).isEqualTo("B001");
+            assertThat(respuesta.comprobante().qr()).contains("B001");
+            assertThat(respuesta.comprobante().qr()).contains("20123456789"); // RUC empresa
+            assertThat(respuesta.comprobante().fechaEmision()).isNotNull();
         }
     }
 }
