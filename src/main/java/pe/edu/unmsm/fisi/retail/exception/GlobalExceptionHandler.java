@@ -50,6 +50,13 @@ public class GlobalExceptionHandler {
                 ex.getMessage(), peticion, List.of());
     }
 
+    /** Choque con el estado actual del recurso (por ejemplo, turno de caja ya abierto): {@code 409}. */
+    @ExceptionHandler(ConflictoException.class)
+    public ProblemDetail manejarConflicto(ConflictoException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.CONFLICT, ex.getCodigo(), "Conflicto con el estado actual",
+                ex.getMessage(), peticion, List.of());
+    }
+
     /** Falla de Bean Validation sobre un cuerpo {@code @Valid}. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail manejarValidacion(MethodArgumentNotValidException ex, HttpServletRequest peticion) {

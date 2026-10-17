@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 -- ESQUEMA DDL FÍSICO — BASE DE DATOS RETAIL (GRUPO 4)
 -- Marketplace Multicanal de Artículos Deportivos — Ciclo 2026-II
 -- Optimizado y listo para Supabase (PostgreSQL 15+)
@@ -25,7 +25,7 @@ $$ LANGUAGE plpgsql;
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_CAJA_SESION (
     id_sesion               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tienda_id               UUID NOT NULL,
+    tienda_id               TEXT NOT NULL,
     terminal_pos_codigo     VARCHAR(20) NOT NULL,
     vendedor_id             UUID NOT NULL, -- Ref. externa lógica: Módulo Seguridad
     fecha_hora_apertura     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS RET_MOVIMIENTO_CAJA (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_CARRITO_ESPERA (
     id_carrito_espera       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tienda_id               UUID NOT NULL,
+    tienda_id               TEXT NOT NULL,
     vendedor_id             UUID NOT NULL, -- Ref. externa lógica: Módulo Seguridad
     cliente_id              UUID NULL,     -- Ref. externa lógica opcional: Módulo Seguridad
     alias_ticket            VARCHAR(80) NOT NULL,
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS RET_SOLICITUD_CAMBIO_MOSTRADOR (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_INCIDENCIA_INVENTARIO (
     id_incidencia           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tienda_id               UUID NOT NULL,
+    tienda_id               TEXT NOT NULL,
     vendedor_reporta_id     UUID NOT NULL, -- Ref. externa lógica: Módulo Seguridad
     variante_sku_id         UUID NOT NULL, -- Ref. externa lógica: Módulo Productos
     codigo_barras           VARCHAR(50) NOT NULL,
@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS RET_INCIDENCIA_INVENTARIO (
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_CONTINGENCIA_OFFLINE_LOG (
     id_log                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tienda_id               UUID NOT NULL,
+    tienda_id               TEXT NOT NULL,
     terminal_pos_codigo     VARCHAR(20) NOT NULL,
     venta_local_uuid        VARCHAR(64) NOT NULL UNIQUE,
     payload_json_orden      JSONB NOT NULL,
@@ -166,10 +166,10 @@ CREATE TABLE IF NOT EXISTS RET_CONTINGENCIA_OFFLINE_LOG (
 CREATE TABLE IF NOT EXISTS RET_PERSONAL_TIENDA (
     id_personal             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id              UUID NOT NULL UNIQUE, -- Identificador lógico del usuario ('sub' auth)
-    tienda_id               UUID NOT NULL,
+    tienda_id               TEXT NOT NULL,
     codigo_vendedor         VARCHAR(20) NOT NULL,
     perfil_tienda           VARCHAR(20) NOT NULL 
-                            CHECK (perfil_tienda IN ('VENDEDOR', 'CAJERO', 'SUPERVISOR')),
+                            CHECK (perfil_tienda IN ('VENDEDOR', 'SUPERVISOR')),
     activo                  BOOLEAN NOT NULL DEFAULT TRUE,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -187,7 +187,7 @@ CREATE TRIGGER trg_ret_personal_tienda_updated_at
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_AUDITORIA_OPERACIONES (
     id_auditoria            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tienda_id               UUID NOT NULL,
+    tienda_id               TEXT NOT NULL,
     usuario_id              UUID NOT NULL, -- Ref. externa lógica: Módulo Seguridad
     caja_sesion_id          UUID NULL,
     terminal_pos_codigo     VARCHAR(20) NOT NULL,
