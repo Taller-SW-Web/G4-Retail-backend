@@ -1,0 +1,24 @@
+# Carpetas de build y IDE que no deben entrar en la imagen Docker
+target/
+.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Git
+.git/
+.gitignore
+
+# Documentacion y diseno (no necesarios en la imagen)
+diseño_bd/
+docs/
+*.md
+
+# Logs
+*.log
