@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+import pe.edu.unmsm.fisi.retail.config.LocalDatabaseConfig;
 import pe.edu.unmsm.fisi.retail.model.PerfilTienda;
 import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
 
@@ -21,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * registro esta activo; un perfil inactivo no debe poder operar en mostrador.</p>
  */
 @DataJpaTest
+@ActiveProfiles({"local", "mock"})
+@Import(LocalDatabaseConfig.class)
 class PersonalTiendaRepositoryTest {
 
     private static final UUID TIENDA_MIRAFLORES = UUID.fromString("11111111-1111-1111-1111-111111111111");
