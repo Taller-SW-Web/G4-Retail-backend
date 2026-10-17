@@ -10,7 +10,6 @@ import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Cuerpo del {@code POST /api/v1/retail/ventas}.
@@ -18,27 +17,23 @@ import java.util.UUID;
  * <p>F5 — RF-13 / RF-14 / RF-15: cierre transaccional de la venta presencial en mostrador,
  * emision de boleta B001 y registro del pago (efectivo o tarjeta POS).</p>
  *
- * <p><strong>Límite de responsabilidad:</strong> este DTO no valida documentos de identidad
- * (eso es F3 — ClienteController) ni abre/cierra turnos de caja (eso es F8 — CajaController).
- * Solo recibe los datos necesarios para calcular los montos fiscales y persisitir la venta.</p>
+ * <p><strong>Alineado con el contrato v0.4 §5.5.</strong> Los campos {@code tiendaId} y
+ * {@code vendedorId} no viajan en el body: se toman del perfil del usuario autenticado
+ * (§2.4). Los precios los calcula el backend (§5.4); {@code precioFinal} se mantiene
+ * temporalmente para los mocks de la Semana 8 hasta que CatalogoService este listo.</p>
  */
 public record VentaRequest(
 
-        /** Canal de origen. Siempre {@code "RETAIL"} para ventas presenciales en mostrador. */
-        @NotBlank(message = "El canal es obligatorio")
-        String canal,
+        /** Codigo de la terminal POS donde se realiza la venta. Ej: {@code POS-01}. */
+        @NotBlank(message = "El terminalPos es obligatorio")
+        String terminalPos,
 
-        /** Identificador de la tienda donde se realiza la venta. */
-        @NotNull(message = "El tiendaId es obligatorio")
-        UUID tiendaId,
+        /** Identificador del turno de caja abierto en la terminal. */
+        @NotBlank(message = "El turnoId es obligatorio")
+        String turnoId,
 
-        /** Identificador del vendedor autenticado que atiende la venta. */
-        @NotNull(message = "El vendedorId es obligatorio")
-        UUID vendedorId,
-
-        /** Identificador del cliente asociado a la transaccion (puede ser cliente anonimo). */
-        @NotNull(message = "El clienteId es obligatorio")
-        UUID clienteId,
+        /** Identificador del cliente asociado a la transaccion (texto opaco de Seguridad). */
+        String clienteId,
 
         /** Lineas de detalle: cada item es una variante de prenda con su cantidad y precio final. */
         @NotEmpty(message = "La venta debe tener al menos un item")
@@ -56,7 +51,13 @@ public record VentaRequest(
         ComprobanteDto comprobante,
 
         /** Si es {@code true}, se genera adicionalmente un ticket de cambio para regalo. */
-        boolean emitirTicketRegalo
+        boolean emitirTicketRegalo,
+
+        /** Codigo de cupon promocional (opcional, evaluado en §5.4). */
+        String cupon,
+
+        /** Referencia a la evaluacion previa de precios de {@code /carritos/calcular} (opcional). */
+        String evaluacionId
 
 ) {
 
@@ -65,8 +66,9 @@ public record VentaRequest(
     /**
      * Una linea del detalle de venta.
      *
-     * <p><strong>Limite:</strong> el descuento de stock es responsabilidad de CatalogoService (F2);
-     * VentaService solo registra la transaccion y calcula los importes fiscales.</p>
+     * <p><strong>Nota Semana 8:</strong> {@code precioFinal} se mantiene para que el mock
+     * pueda calcular totales sin depender de CatalogoService. En produccion, el precio
+     * proviene de la evaluacion de precios (§5.4) y no del cliente.</p>
      */
     public record ItemVentaDto(
 
@@ -78,32 +80,41 @@ public record VentaRequest(
             @Positive(message = "La cantidad debe ser mayor que cero")
             int cantidad,
 
-            /** Precio unitario final aplicado al momento de la venta (ya con descuentos). */
+            /** Precio unitario final aplicado al momento de la venta (mock Semana 8). */
             @NotNull(message = "El precioFinal es obligatorio")
             @DecimalMin(value = "0.01", message = "El precioFinal debe ser mayor que cero")
             BigDecimal precioFinal
 
     ) {}
 
-    /** Datos del medio de pago utilizado en la transaccion. */
+    /**
+     * Datos del medio de pago utilizado en la transaccion.
+     *
+     * <p>Alineado con el contrato v0.4 §5.5: para EFECTIVO se usa
+     * {@code montoRecibidoEfectivo} (que puede ser mayor al total, generando vuelto);
+     * para TARJETA_POS se usa {@code montoTarjeta} y {@code referenciaOperacion}.</p>
+     */
     public record PagoDto(
 
             /**
              * Medio de pago: {@code EFECTIVO} o {@code TARJETA_POS}.
-             * Solo se admiten estos dos valores (seccion RF-14).
              */
             @NotNull(message = "El medioPago es obligatorio")
             @Pattern(regexp = "EFECTIVO|TARJETA_POS", message = "medioPago debe ser EFECTIVO o TARJETA_POS")
             String medioPago,
 
-            /** Monto total de la transaccion (debe coincidir con la suma de items × precioFinal). */
-            @NotNull(message = "El monto es obligatorio")
-            @DecimalMin(value = "0.01", message = "El monto debe ser mayor que cero")
-            BigDecimal monto,
+            /**
+             * Monto en efectivo recibido del cliente. Solo aplica cuando {@code medioPago = EFECTIVO}.
+             * Debe ser mayor o igual al total a pagar; el excedente es el vuelto.
+             */
+            BigDecimal montoRecibidoEfectivo,
+
+            /** Monto cargado a la tarjeta via POS fisico. Solo aplica cuando {@code medioPago = TARJETA_POS}. */
+            BigDecimal montoTarjeta,
 
             /**
              * Referencia del voucher o numero de operacion del POS fisico.
-             * Obligatorio cuando {@code medioPago = TARJETA_POS}.
+             * Obligatorio cuando {@code medioPago = TARJETA_POS}, minimo 4 caracteres.
              */
             String referenciaOperacion
 
