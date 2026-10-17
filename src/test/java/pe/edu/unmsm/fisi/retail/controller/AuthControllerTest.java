@@ -57,6 +57,17 @@ class AuthControllerTest {
     }
 
     @Test
+    @DisplayName("Con el token del vendedor asignado por Seguridad (G7) devuelve su perfil de mostrador")
+    void devuelvePerfilDeVendedorIntegracionG7() throws Exception {
+        mvc.perform(get("/api/v1/retail/perfil").with(jwt().jwt(j -> j.subject("b9e222a5-cf86-4c95-9611-891886160821"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.usuarioId").value("b9e222a5-cf86-4c95-9611-891886160821"))
+                .andExpect(jsonPath("$.codigoVendedor").value("VEN-002"))
+                .andExpect(jsonPath("$.perfilTienda").value("VENDEDOR"))
+                .andExpect(jsonPath("$.activo").value(true));
+    }
+
+    @Test
     @DisplayName("Distingue al supervisor, que tiene atribuciones adicionales")
     void distingueAlSupervisor() throws Exception {
         mvc.perform(get("/api/v1/retail/perfil").with(jwt().jwt(j -> j.subject(SUPERVISOR))))
