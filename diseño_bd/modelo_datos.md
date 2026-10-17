@@ -14,7 +14,9 @@ En concordancia con el patrón **Database-per-Service**, el microservicio Retail
 
 > [!IMPORTANT]
 > **Desacoplamiento de Entidades Foráneas:**  
-> Los atributos `tienda_id`, `vendedor_id`, `cliente_id`, `producto_id`, `variante_sku_id` y `pedido_id_origen` son **identificadores lógicos desacoplados** (UUIDs provistos por los módulos de Seguridad, Productos o Ventas vía API REST). No se definen como `FOREIGN KEY` físicas a nivel de motor SQL hacia bases de datos externas, garantizando alta cohesión, autonomía de despliegue y tolerancia a fallos.
+> Los atributos `vendedor_id`, `cliente_id`, `producto_id`, `variante_sku_id` y `pedido_id_origen` son **identificadores lógicos desacoplados** (UUIDs provistos por los módulos de Seguridad, Productos o Ventas vía API REST). No se definen como `FOREIGN KEY` físicas a nivel de motor SQL hacia bases de datos externas, garantizando alta cohesión, autonomía de despliegue y tolerancia a fallos.
+>
+> `tienda_id` es la excepción: guarda el **código textual de sucursal** (`store_code`, por ejemplo `TIENDA-MIRAFLORES`), no un UUID. Es el acuerdo D-05 entre módulos.
 
 ---
 
@@ -30,7 +32,7 @@ erDiagram
 
     RET_CAJA_SESION {
         uuid id_sesion PK "Identificador unico de la sesion de caja"
-        uuid tienda_id "ID de la sucursal fisica"
+        text tienda_id "Codigo de sucursal (store_code)"
         string terminal_pos_codigo "Codigo identificador del hardware POS (ej: POS-01)"
         uuid vendedor_id "ID logico del cajero/vendedor responsable (Seguridad)"
         timestamp fecha_hora_apertura "Momento exacto de inicio de turno"
@@ -57,7 +59,7 @@ erDiagram
 
     RET_CARRITO_ESPERA {
         uuid id_carrito_espera PK "Identificador unico del carrito suspendido"
-        uuid tienda_id "ID de la sucursal fisica"
+        text tienda_id "Codigo de sucursal (store_code)"
         uuid vendedor_id "ID logico del vendedor que atiende (Seguridad)"
         uuid cliente_id "ID logico opcional del cliente identificado (Seguridad)"
         string alias_ticket "Nombre descriptivo para recuperacion rapida (ej: Probador 2)"
@@ -96,7 +98,7 @@ erDiagram
 
     RET_INCIDENCIA_INVENTARIO {
         uuid id_incidencia PK "Identificador unico de la incidencia"
-        uuid tienda_id "ID de la sucursal fisica"
+        text tienda_id "Codigo de sucursal (store_code)"
         uuid vendedor_reporta_id "ID logico del colaborador que detecta la merma"
         uuid variante_sku_id "ID logico de la prenda afectada (Productos)"
         string codigo_barras "EAN-13 o SKU escaneado de la prenda"
@@ -109,7 +111,7 @@ erDiagram
 
     RET_CONTINGENCIA_OFFLINE_LOG {
         uuid id_log PK "Identificador unico de la transaccion offline"
-        uuid tienda_id "ID de la sucursal fisica"
+        text tienda_id "Codigo de sucursal (store_code)"
         string terminal_pos_codigo "Terminal que emitio la venta sin conexion"
         string venta_local_uuid "UUID generado localmente en el navegador (IndexedDB)"
         text payload_json_orden "Payload transaccional completo en formato JSON"
@@ -123,16 +125,16 @@ erDiagram
     RET_PERSONAL_TIENDA {
         uuid id_personal PK "Identificador unico de asignacion de personal"
         uuid usuario_id "ID logico del colaborador (sub)"
-        uuid tienda_id "ID de la sucursal fisica"
+        text tienda_id "Codigo de sucursal (store_code)"
         string codigo_vendedor "Codigo del colaborador (ej: VEND-1042)"
-        string perfil_tienda "VENDEDOR, CAJERO, SUPERVISOR"
+        string perfil_tienda "VENDEDOR, SUPERVISOR"
         boolean activo "Estado operativo del colaborador"
         timestamp created_at "Auditoria de creacion"
         timestamp updated_at "Auditoria de actualizacion"
     }
     RET_AUDITORIA_OPERACIONES {
         uuid id_auditoria PK "Identificador unico del registro de auditoria"
-        uuid tienda_id "ID de la sucursal fisica"
+        text tienda_id "Codigo de sucursal (store_code)"
         uuid usuario_id "ID logico del usuario que ejecuta la accion (Seguridad)"
         uuid caja_sesion_id FK "Turno de caja asociado (opcional)"
         string terminal_pos_codigo "Terminal POS de origen"
@@ -157,7 +159,7 @@ Gestiona la apertura, turnos, fondo fijo inicial y el **arqueo ciego de caja (Ci
 | Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
 | :--- | :--- | :---: | :--- | :--- |
 | `id_sesion` | `UUID` | No | `PRIMARY KEY` | Identificador de la sesión de caja |
-| `tienda_id` | `UUID` | No | — | Identificador de la sucursal física |
+| `tienda_id` | `TEXT` | No | — | Identificador de la sucursal física |
 | `terminal_pos_codigo` | `VARCHAR(20)` | No | — | Código físico de la máquina POS (ej. `POS-01`) |
 | `vendedor_id` | `UUID` | No | Ref. externa Seguridad | Cajero o vendedor asignado |
 | `fecha_hora_apertura` | `TIMESTAMP` | No | `DEFAULT CURRENT_TIMESTAMP` | Fecha y hora de apertura de turno |
@@ -194,7 +196,7 @@ Permite suspender carritos activos para no retener la cola del POS mientras el c
 | Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
 | :--- | :--- | :---: | :--- | :--- |
 | `id_carrito_espera` | `UUID` | No | `PRIMARY KEY` | Identificador del carrito suspendido |
-| `tienda_id` | `UUID` | No | — | Sucursal donde se origina la atención |
+| `tienda_id` | `TEXT` | No | — | Sucursal donde se origina la atención |
 | `vendedor_id` | `UUID` | No | Ref. externa Seguridad | Vendedor que asistió al cliente |
 | `cliente_id` | `UUID` | Sí | Ref. externa Seguridad | Cliente identificado (opcional) |
 | `alias_ticket` | `VARCHAR(80)` | No | — | Alias visual (ej. `Probador 3 - Casaca Adidas`) |
@@ -248,7 +250,7 @@ Control y registro de mermas físicas, prendas dañadas en probadores o extraví
 | Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
 | :--- | :--- | :---: | :--- | :--- |
 | `id_incidencia` | `UUID` | No | `PRIMARY KEY` | Identificador de la incidencia |
-| `tienda_id` | `UUID` | No | — | Sucursal donde ocurrió el suceso |
+| `tienda_id` | `TEXT` | No | — | Sucursal donde ocurrió el suceso |
 | `vendedor_reporta_id`| `UUID` | No | Ref. externa Seguridad | Vendedor que reporta la prenda |
 | `variante_sku_id` | `UUID` | No | Ref. externa Productos | SKU de la prenda en mal estado |
 | `codigo_barras` | `VARCHAR(50)` | No | — | Código EAN-13 leído por pistola láser |
@@ -266,7 +268,7 @@ Cola de resiliencia para ventas emitidas en contingencia offline (cuando se cae 
 | Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
 | :--- | :--- | :---: | :--- | :--- |
 | `id_log` | `UUID` | No | `PRIMARY KEY` | Identificador del log de contingencia |
-| `tienda_id` | `UUID` | No | — | Sucursal emisora |
+| `tienda_id` | `TEXT` | No | — | Sucursal emisora |
 | `terminal_pos_codigo` | `VARCHAR(20)` | No | — | Código del terminal POS |
 | `venta_local_uuid` | `VARCHAR(64)` | No | `UNIQUE` | UUID de venta generado por IndexedDB en el POS |
 | `payload_json_orden` | `JSONB` / `TEXT` | No | — | JSON con el detalle completo de la orden |
@@ -285,9 +287,9 @@ Gestiona la asignación y perfiles operativos del personal dentro de cada sucurs
 | :--- | :--- | :---: | :--- | :--- |
 | `id_personal` | `UUID` | No | `PRIMARY KEY` | Identificador único de asignación de personal |
 | `usuario_id` | `UUID` | No | `UNIQUE` (Ref. lógica `sub`) | Identificador del usuario en el servicio de autenticación |
-| `tienda_id` | `UUID` | No | — | Identificador de la sucursal física |
+| `tienda_id` | `TEXT` | No | — | Identificador de la sucursal física |
 | `codigo_vendedor` | `VARCHAR(20)` | No | — | Código alfanumérico del colaborador (ej. `VEND-1042`) |
-| `perfil_tienda` | `VARCHAR(20)` | No | `CHECK IN ('VENDEDOR', 'CAJERO', 'SUPERVISOR')` | Perfil operativo asignado en la sucursal |
+| `perfil_tienda` | `VARCHAR(20)` | No | `CHECK IN ('VENDEDOR', 'SUPERVISOR')` | Perfil operativo asignado en la sucursal |
 | `activo` | `BOOLEAN` | No | `DEFAULT TRUE` | Estado operativo del colaborador en la tienda |
 | `created_at` | `TIMESTAMP` | No | `DEFAULT CURRENT_TIMESTAMP` | Auditoría de creación |
 | `updated_at` | `TIMESTAMP` | No | `DEFAULT CURRENT_TIMESTAMP` | Auditoría de actualización |
@@ -300,7 +302,7 @@ Registra la trazabilidad operativa del mostrador: apertura de turno, ventas y ci
 | Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
 | :--- | :--- | :---: | :--- | :--- |
 | `id_auditoria` | `UUID` | No | `PRIMARY KEY` | Identificador único del registro de auditoría |
-| `tienda_id` | `UUID` | No | — | Identificador de la sucursal física |
+| `tienda_id` | `TEXT` | No | — | Identificador de la sucursal física |
 | `usuario_id` | `UUID` | No | — (Ref. lógica Seguridad) | Usuario que ejecutó la operación |
 | `caja_sesion_id` | `UUID` | Sí | `FOREIGN KEY` → `RET_CAJA_SESION(id_sesion)` `ON DELETE RESTRICT` | Turno de caja asociado |
 | `terminal_pos_codigo` | `VARCHAR(20)` | No | — | Terminal POS de origen (ej. `POS-01`) |
