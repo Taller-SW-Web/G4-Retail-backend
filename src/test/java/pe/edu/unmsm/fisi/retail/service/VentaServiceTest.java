@@ -5,16 +5,23 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import pe.edu.unmsm.fisi.retail.client.VentasClient;
+import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests unitarios de {@link VentaService} — F5 (RF-13, RF-14, RF-15).
@@ -481,4 +488,61 @@ class VentaServiceTest {
             assertThat(respuesta.comprobante().fechaEmision()).isNotNull();
         }
     }
+
+    @Nested
+    @DisplayName("Integración con Módulo de Ventas G5 (Hito 3)")
+    class IntegracionVentasG5 {
+
+        @Test
+        @DisplayName("Cuando VentasClient retorna pedidoId de Ventas, VentaService adopta dicho ID oficial")
+        void adoptaPedidoIdDeVentasG5() {
+            VentasClient ventasClientMock = mock(VentasClient.class);
+            VentasPedidoResponse responseG5 = new VentasPedidoResponse(
+                    "PED-2026-00091",
+                    "PAGADO",
+                    new BigDecimal("118.00"),
+                    "PEN",
+                    "RETAIL",
+                    OffsetDateTime.now()
+            );
+
+            when(ventasClientMock.crearPedido(any(), any())).thenReturn(Optional.of(responseG5));
+
+            VentaService servicioConVentas = new VentaService(ventasClientMock);
+            servicioConVentas.abrirTurnoMock(TURNO_ABIERTO);
+
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "118.00")),
+                    pagoEfectivo("200.00"),
+                    boleta("12345678")
+            );
+
+            VentaResponse respuesta = servicioConVentas.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pedidoId()).isEqualTo("PED-2026-00091");
+            assertThat(respuesta.estadoPedido()).isEqualTo("PAGADO");
+        }
+
+        @Test
+        @DisplayName("Cuando VentasClient falla o retorna vacío, VentaService aplica fallback local sin interrumpir la venta")
+        void aplicaFallbackLocalAnteFalloDeVentas() {
+            VentasClient ventasClientMock = mock(VentasClient.class);
+            when(ventasClientMock.crearPedido(any(), any())).thenReturn(Optional.empty());
+
+            VentaService servicioConVentas = new VentaService(ventasClientMock);
+            servicioConVentas.abrirTurnoMock(TURNO_ABIERTO);
+
+            VentaRequest req = request(
+                    List.of(item("SKU-001", 1, "118.00")),
+                    pagoEfectivo("200.00"),
+                    boleta("12345678")
+            );
+
+            VentaResponse respuesta = servicioConVentas.registrarVenta(req, UUID.randomUUID().toString());
+
+            assertThat(respuesta.pedidoId()).startsWith("VNT-");
+            assertThat(respuesta.estadoPedido()).isEqualTo("PAGADO");
+        }
+    }
 }
+
