@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Size;
  * @param dniRecoge           DNI de quien retira el paquete (8 dígitos)
  * @param nombreRecoge        nombres completos de quien retira
  * @param esTerceroAutorizado {@code true} si no es el titular de la compra
+ * @param codigoRetiro        código de 6 caracteres que el cliente recibió al comprar (contrato §5.7)
  */
 public record EntregaPickupRequest(
 
@@ -25,5 +26,9 @@ public record EntregaPickupRequest(
         @Size(max = 120, message = "El nombre no puede superar los 120 caracteres")
         String nombreRecoge,
 
-        boolean esTerceroAutorizado) {
+        boolean esTerceroAutorizado,
+
+        @NotBlank(message = "El código de retiro es obligatorio")
+        @Pattern(regexp = "^[A-Z0-9]{6}$", message = "El código de retiro debe tener 6 caracteres alfanuméricos")
+        String codigoRetiro) {
 }

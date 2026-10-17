@@ -7,6 +7,7 @@ import pe.edu.unmsm.fisi.retail.dto.PedidoPickupResponse;
 import pe.edu.unmsm.fisi.retail.dto.PedidoPickupResponse.Articulo;
 import pe.edu.unmsm.fisi.retail.exception.ConflictoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
+import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -30,6 +31,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PickupService {
 
     static final String LISTO_PARA_RECOJO = "LISTO_PARA_RECOJO";
+
+    /** Códigos de retiro de los pedidos de ejemplo; nunca viajan en la respuesta de la bandeja. */
+    private static final Map<String, String> CODIGOS_RETIRO = Map.of(
+            "PED-2026-08910", "A7K2Q9",
+            "PED-2026-08914", "B3M8X1",
+            "PED-2026-08897", "C5P4Z7",
+            "PED-2026-08871", "D9R6W2",
+            "PED-2026-08932", "E2T7Y5");
 
     private final Map<String, PedidoPickupResponse> pedidos = new ConcurrentHashMap<>();
     private final Set<String> entregados = ConcurrentHashMap.newKeySet();
@@ -62,7 +71,7 @@ public class PickupService {
      * RF-19: registra la entrega física y emite la constancia.
      *
      * <p>{@code 404} si el pedido no existe; {@code 409} si todavía no está listo para recojo o ya se
-     * entregó.</p>
+     * entregó; {@code 422} si el código de retiro no corresponde al pedido.</p>
      *
      * @param encargadoId vendedor que entrega, tomado del token
      */
@@ -72,7 +81,15 @@ public class PickupService {
             throw new RecursoNoEncontradoException("PEDIDO_NO_ENCONTRADO",
                     "No existe el pedido " + pedidoId);
         }
-        if (!LISTO_PARA_RECOJO.equals(pedido.estado()) || !entregados.add(pedidoId)) {
+        if (!LISTO_PARA_RECOJO.equals(pedido.estado()) || entregados.contains(pedidoId)) {
+            throw new ConflictoException("PEDIDO_NO_LISTO_PARA_RECOJO",
+                    "El paquete no figura en estado listo para recojo");
+        }
+        if (!peticion.codigoRetiro().equals(CODIGOS_RETIRO.get(pedidoId))) {
+            throw new ReglaNegocioException("CODIGO_RETIRO_INVALIDO",
+                    "El código de retiro no corresponde a este pedido");
+        }
+        if (!entregados.add(pedidoId)) {
             throw new ConflictoException("PEDIDO_NO_LISTO_PARA_RECOJO",
                     "El paquete no figura en estado listo para recojo");
         }
