@@ -22,24 +22,24 @@ import java.util.UUID;
 /**
  * Retiro en tienda / Pickup (F7): RF-18 y RF-19.
  *
- * <p>Las rutas son las que fija el documento de reparto de la Semana 8:</p>
+ * <p>Las rutas son las canónicas del contrato ({@code api-contracts.md} §5.7):</p>
  * <ul>
- *   <li>{@code GET /api/v1/retail/pedidos/pickup} — bandeja de pedidos para recojo (RF-18)</li>
- *   <li>{@code POST /api/v1/retail/pedidos/{pedidoId}/entrega} — confirmación de entrega física (RF-19)</li>
+ *   <li>{@code GET /api/v1/retail/pickup/pendientes} — bandeja de pedidos para recojo (RF-18)</li>
+ *   <li>{@code POST /api/v1/retail/pickup/{pedidoId}/entrega} — confirmación de entrega física (RF-19)</li>
  * </ul>
  *
  * <p>Ambos endpoints exigen token válido. El encargado de la entrega no se recibe del cliente: es el
  * {@code sub} del JWT.</p>
  */
 @RestController
-@RequestMapping("/api/v1/retail/pedidos")
+@RequestMapping("/api/v1/retail/pickup")
 @RequiredArgsConstructor
 public class PickupController {
 
     private final PickupService pickupService;
 
     /** Pedidos pickup de la tienda pendientes de entrega (RF-18). */
-    @GetMapping("/pickup")
+    @GetMapping("/pendientes")
     public List<PedidoPickupResponse> pendientes() {
         return pickupService.pendientes();
     }
