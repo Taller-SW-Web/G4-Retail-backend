@@ -1,4 +1,4 @@
-﻿package pe.edu.unmsm.fisi.retail.service;
+package pe.edu.unmsm.fisi.retail.service;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
