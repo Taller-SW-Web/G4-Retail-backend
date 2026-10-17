@@ -1,9 +1,12 @@
 package pe.edu.unmsm.fisi.retail.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import pe.edu.unmsm.fisi.retail.client.VentasClient;
+import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
+import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
@@ -11,7 +14,9 @@ import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,18 +35,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li>Garantizar idempotencia: la misma {@code Idempotency-Key} siempre devuelve
  *       la misma {@link VentaResponse}.</li>
  *   <li>Generar el ticket de cambio para regalo si se solicita.</li>
- * </ul>
- *
- * <p><strong>Fuera del alcance de este servicio:</strong></p>
- * <ul>
- *   <li>Validacion de documentos de identidad (DNI/RUC) — F3 ClienteService.</li>
- *   <li>Apertura o cierre de turnos de caja — F8 CajaService.</li>
- *   <li>Descuento de stock de inventario — F2 CatalogoService.</li>
+ *   <li>Integrar con el Módulo de Ventas (G5) para persistencia centralizada con fallback local.</li>
  * </ul>
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class VentaService {
 
     /** IGV vigente en Peru: 18 %. */
@@ -52,6 +50,9 @@ public class VentaService {
 
     /** RUC mock de la empresa para el QR de verificacion SUNAT (Semana 8). */
     private static final String RUC_EMPRESA_MOCK = "20123456789";
+
+    /** Cliente REST para comunicación con Ventas y Postventa (G5). */
+    private final VentasClient ventasClient;
 
     /** Contador del correlativo de boleta (persistencia en memoria para el parcial;
      *  TODO: migrar a secuencia en Supabase antes del final). */
@@ -71,53 +72,72 @@ public class VentaService {
      */
     private final Set<String> turnosAbiertos = ConcurrentHashMap.newKeySet();
 
+    /** Constructor sin argumentos para compatibilidad con tests unitarios existentes. */
+    public VentaService() {
+        this.ventasClient = null;
+    }
+
+    /** Constructor principal con inyección opcional del cliente de Ventas. */
+    @Autowired
+    public VentaService(@Autowired(required = false) VentasClient ventasClient) {
+        this.ventasClient = ventasClient;
+    }
+
     // ── API publica ──────────────────────────────────────────────────────────
 
     /**
-     * Registra un turno como abierto (mock Semana 8).
-     *
-     * <p>Este metodo existe solo hasta que CajaService implemente la apertura real.
-     * La validacion de turno en {@link #registrarVenta} consulta este set.</p>
-     *
-     * @param turnoId identificador del turno que se marca como abierto
+     * Registra un turno de caja como abierto en la simulacion en memoria.
+     * Solo para uso en tests y desarrollo local hasta que F8 este conectado.
      */
     public void abrirTurnoMock(String turnoId) {
         turnosAbiertos.add(turnoId);
     }
 
     /**
-     * Registra la venta y emite el comprobante correspondiente.
+     * Cierra un turno de caja en la simulacion en memoria.
+     */
+    public void cerrarTurnoMock(String turnoId) {
+        turnosAbiertos.remove(turnoId);
+    }
+
+    /**
+     * Procesa y registra una venta en mostrador (F5).
      *
-     * @param request      datos completos de la venta validados por Bean Validation
-     * @param idempotencyKey clave unica del cliente para garantizar exactamente un registro
-     *                       aunque la red repita la peticion
-     * @return respuesta con el {@code pedidoId}, el comprobante emitido y el ticket de regalo
-     * @throws ReglaNegocioException si hay incoherencia de montos, turno cerrado o violacion SUNAT
+     * <p>Flujo de ejecucion:</p>
+     * <ol>
+     *   <li>Verifica si la {@code Idempotency-Key} ya fue procesada; si es asi,
+     *       devuelve la respuesta almacenada inmediatamente.</li>
+     *   <li>Valida que el turno de caja este abierto (RF-13).</li>
+     *   <li>Calcula el total a pagar y valida el medio de pago (RF-13).</li>
+     *   <li>Valida la normativa SUNAT sobre el comprobante (RF-14).</li>
+     *   <li>Calcula la descomposicion fiscal: subtotal e IGV 18 % (RF-12).</li>
+     *   <li>Calcula el vuelto segun el monto recibido (RF-13).</li>
+     *   <li>Genera la serie y correlativo del comprobante (RF-14).</li>
+     *   <li>Construye la cadena QR para impresion termica (RF-14).</li>
+     *   <li>Si se solicito ticket de regalo, genera su codigo de canje (RF-15).</li>
+     *   <li>Almacena la respuesta en la cache de idempotencia y registra log de auditoria.</li>
+     * </ol>
+     *
+     * @param request        datos de la venta (items, pago, comprobante, etc.)
+     * @param idempotencyKey identificador unico de la operacion enviado por el frontend
+     * @return respuesta con los datos de la venta registrada y el comprobante emitido
+     * @throws ReglaNegocioException si alguna validacion de negocio falla
      */
     public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
-
-        // Idempotencia: si ya procesamos esta llave, devolver la misma respuesta
-        if (cacheIdempotencia.containsKey(idempotencyKey)) {
+        // 1. Validar idempotencia: si la llave ya fue procesada, devolver la misma respuesta
+        if (idempotencyKey != null && cacheIdempotencia.containsKey(idempotencyKey)) {
             log.info("Idempotencia activada para llave={}", idempotencyKey);
             return cacheIdempotencia.get(idempotencyKey);
         }
 
-        // 0. Validar turno de caja abierto (precondicion del contrato §5.5)
+        // 2. Validar reglas de negocio
         validarTurnoAbierto(request.turnoId());
-
-        // 1. Calcular totales fiscales
         BigDecimal totalCalculado = calcularTotal(request);
         validarMontoPago(request, totalCalculado);
         validarNormativaSunat(request, totalCalculado);
 
-        // 2. Generar correlativo y pedidoId
-        boolean esFactura = "FACTURA".equals(request.comprobante().tipo());
-        String serie = esFactura ? "F001" : "B001";
-        int numCorrelativo = esFactura
-                ? correlativoFactura.getAndIncrement()
-                : correlativoBoleta.getAndIncrement();
-        String correlativo = String.format("%05d", numCorrelativo);
-        String pedidoId = generarPedidoId();
+        OffsetDateTime ahora = OffsetDateTime.now();
+        String pedidoId = resolverPedidoId(request, totalCalculado, ahora, idempotencyKey);
         String ventaId = UUID.randomUUID().toString();
 
         // 3. Calcular descomposicion fiscal
@@ -138,15 +158,22 @@ public class VentaService {
             vuelto = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
 
-        // 5. Armar cadena QR de verificacion SUNAT
+        // 5. Determinar serie y correlativo segun tipo de comprobante
+        String tipoComprobante = request.comprobante().tipo();
+        String serie = "FACTURA".equals(tipoComprobante) ? "F001" : "B001";
+        int correlativoNum = "FACTURA".equals(tipoComprobante)
+                ? correlativoFactura.getAndIncrement()
+                : correlativoBoleta.getAndIncrement();
+        String correlativo = String.format("%05d", correlativoNum);
+
+        // 6. Armar cadena QR de verificacion SUNAT
         String doc = request.comprobante().numeroDocumento() != null
                 ? request.comprobante().numeroDocumento() : "";
         String qr = String.join("|",
                 RUC_EMPRESA_MOCK, serie, correlativo,
                 igv.toPlainString(), totalCalculado.toPlainString(), doc);
 
-        // 6. Armar comprobante
-        OffsetDateTime ahora = OffsetDateTime.now();
+        // 7. Armar comprobante
         VentaResponse.ComprobanteEmitido comprobante = new VentaResponse.ComprobanteEmitido(
                 request.comprobante().tipo(),
                 serie,
@@ -158,12 +185,12 @@ public class VentaService {
                 qr
         );
 
-        // 7. Armar resumen de pago
+        // 8. Armar resumen de pago
         VentaResponse.PagoResumen pagoResumen = new VentaResponse.PagoResumen(
                 medioPago, montoRecibido, vuelto
         );
 
-        // 8. Ticket de regalo (opcional)
+        // 9. Ticket de regalo (opcional)
         VentaResponse.TicketRegalo ticketRegalo = null;
         if (request.emitirTicketRegalo()) {
             ticketRegalo = new VentaResponse.TicketRegalo(
@@ -176,7 +203,7 @@ public class VentaService {
                 ventaId, pedidoId, "PAGADO", pagoResumen, comprobante, ticketRegalo
         );
 
-        // 9. Guardar en cache de idempotencia y loguear auditoria
+        // 10. Guardar en cache de idempotencia y loguear auditoria
         cacheIdempotencia.put(idempotencyKey, respuesta);
         log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={} vuelto={}",
                 ventaId, pedidoId, serie, correlativo, request.terminalPos(), totalCalculado, vuelto);
@@ -188,14 +215,6 @@ public class VentaService {
 
     /**
      * Valida que el turno de caja este abierto antes de procesar la venta.
-     *
-     * <p>Mock Semana 8: verifica contra un {@link Set} en memoria. Cuando Angie (F8)
-     * implemente {@code CajaService}, reemplazar por consulta a {@code RET_CAJA_SESION}
-     * con estado {@code ABIERTA}.</p>
-     *
-     * @throws ReglaNegocioException con codigo {@code TURNO_NO_ABIERTO}
-     *         (el contrato indica 409, pero se usa 422 temporalmente hasta que exista
-     *          una excepcion especifica para conflictos de estado)
      */
     void validarTurnoAbierto(String turnoId) {
         if (!turnosAbiertos.contains(turnoId)) {
@@ -209,9 +228,6 @@ public class VentaService {
 
     /**
      * Suma {@code cantidad × precioFinal} de cada item y redondea a 2 decimales.
-     *
-     * <p>El total incluye IGV (precio de lista con impuesto incluido, segun convencion
-     * peruana de precios al publico).</p>
      */
     BigDecimal calcularTotal(VentaRequest request) {
         return request.items().stream()
@@ -221,14 +237,7 @@ public class VentaService {
     }
 
     /**
-     * Valida el pago segun el medio utilizado (contrato §5.5, RF-13):
-     * <ul>
-     *   <li>EFECTIVO: {@code montoRecibidoEfectivo >= totalPagar}. Si no cubre, lanza
-     *       {@code MONTO_INSUFICIENTE} indicando el faltante.</li>
-     *   <li>TARJETA_POS: {@code referenciaOperacion} obligatoria, minimo 4 caracteres.</li>
-     * </ul>
-     *
-     * @throws ReglaNegocioException si el pago no cumple las reglas del medio seleccionado
+     * Valida el pago segun el medio utilizado (contrato §5.5, RF-13).
      */
     void validarMontoPago(VentaRequest request, BigDecimal totalCalculado) {
         String medioPago = request.pago().medioPago();
@@ -251,20 +260,14 @@ public class VentaService {
             if (ref == null || ref.trim().length() < 4) {
                 throw new ReglaNegocioException(
                         "REFERENCIA_VOUCHER_INVALIDA",
-                        "Para pago con tarjeta, la referencia de operacion es obligatoria y debe tener al menos 4 caracteres"
+                        "Para pago con tarjeta POS debe ingresar una referencia de voucher valida (minimo 4 caracteres)"
                 );
             }
         }
     }
 
     /**
-     * Aplica las reglas tributarias SUNAT para la emision del comprobante:
-     * <ul>
-     *   <li>FACTURA requiere que {@code numeroDocumento} sea un RUC de 11 digitos.</li>
-     *   <li>BOLETA con monto &ge; S/ 700 requiere que {@code numeroDocumento} sea un DNI.</li>
-     * </ul>
-     *
-     * @throws ReglaNegocioException si se viola alguna de las reglas
+     * Valida las reglas tributarias peruanas sobre comprobantes de pago.
      */
     void validarNormativaSunat(VentaRequest request, BigDecimal totalCalculado) {
         String tipo = request.comprobante().tipo();
@@ -287,6 +290,109 @@ public class VentaService {
                 );
             }
         }
+    }
+
+    /**
+     * Resuelve el identificador del pedido delegando en el microservicio de Ventas (G5)
+     * o aplicando fallback a generación local en caso de error o servicio inactivo.
+     */
+    private String resolverPedidoId(VentaRequest request, BigDecimal totalCalculado,
+                                    OffsetDateTime ahora, String idempotencyKey) {
+        if (ventasClient != null) {
+            try {
+                VentasCrearPedidoRequest pedidoRequest = armarPedidoVentasRequest(request, totalCalculado, ahora);
+                Optional<VentasPedidoResponse> respuestaVentas = ventasClient.crearPedido(pedidoRequest, idempotencyKey);
+                if (respuestaVentas.isPresent() && respuestaVentas.get().pedidoId() != null) {
+                    log.info("Pedido registrado exitosamente con identificador de Ventas G5: {}",
+                            respuestaVentas.get().pedidoId());
+                    return respuestaVentas.get().pedidoId();
+                }
+            } catch (Exception e) {
+                log.warn("Excepción al comunicarse con Ventas G5 (activando fallback local): {}", e.getMessage());
+            }
+        }
+        return generarPedidoId();
+    }
+
+    /**
+     * Transforma los datos de la venta de mostrador al formato canónico de Ventas (G5).
+     */
+    VentasCrearPedidoRequest armarPedidoVentasRequest(VentaRequest request, BigDecimal totalCalculado, OffsetDateTime ahora) {
+        UUID clienteUuid;
+        try {
+            clienteUuid = (request.clienteId() != null && !request.clienteId().isBlank())
+                    ? UUID.fromString(request.clienteId())
+                    : UUID.fromString("00000000-0000-4000-8000-00000000f00a");
+        } catch (IllegalArgumentException e) {
+            clienteUuid = UUID.fromString("00000000-0000-4000-8000-00000000f00a");
+        }
+
+        String nombreCliente = (request.comprobante().razonSocial() != null && !request.comprobante().razonSocial().isBlank())
+                ? request.comprobante().razonSocial()
+                : "Cliente Mostrador";
+
+        String tipoDoc = "FACTURA".equals(request.comprobante().tipo()) ? "RUC" : "DNI";
+        String numDoc = (request.comprobante().numeroDocumento() != null && !request.comprobante().numeroDocumento().isBlank())
+                ? request.comprobante().numeroDocumento()
+                : "00000000";
+
+        VentasCrearPedidoRequest.Contacto contacto = new VentasCrearPedidoRequest.Contacto(
+                clienteUuid,
+                nombreCliente,
+                tipoDoc,
+                numDoc,
+                "999999999",
+                "mostrador@retail.g4"
+        );
+
+        List<VentasCrearPedidoRequest.Item> items = request.items().stream()
+                .map(it -> new VentasCrearPedidoRequest.Item(
+                        "PROD-" + it.sku(),
+                        it.sku(),
+                        "Prenda deportiva SKU " + it.sku(),
+                        it.cantidad(),
+                        it.precioFinal()
+                ))
+                .toList();
+
+        VentasCrearPedidoRequest.Envio envio = new VentasCrearPedidoRequest.Envio(
+                "TIENDA",
+                BigDecimal.ZERO,
+                nombreCliente,
+                "Lima",
+                "Lima",
+                "Miraflores",
+                "Tienda Mostrador",
+                request.terminalPos(),
+                "TIENDA-MIRAFLORES"
+        );
+
+        String medioPago = request.pago().medioPago();
+        String refOperacion = (request.pago().referenciaOperacion() != null && !request.pago().referenciaOperacion().isBlank())
+                ? request.pago().referenciaOperacion()
+                : "OP-MOSTRADOR";
+
+        VentasCrearPedidoRequest.Pago pago = new VentasCrearPedidoRequest.Pago(
+                medioPago,
+                "PEN",
+                totalCalculado,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                totalCalculado,
+                refOperacion,
+                "EFECTIVO".equals(medioPago) ? totalCalculado : BigDecimal.ZERO,
+                "TARJETA_POS".equals(medioPago) ? totalCalculado : BigDecimal.ZERO,
+                ahora
+        );
+
+        return new VentasCrearPedidoRequest(
+                "RETAIL",
+                contacto,
+                items,
+                null,
+                envio,
+                pago
+        );
     }
 
     /** Genera un ID de pedido unico con marca de tiempo y secuencia para trazabilidad. */
