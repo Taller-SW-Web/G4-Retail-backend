@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 class AuthServiceTest {
 
     private static final UUID USUARIO = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000001");
-    private static final UUID TIENDA = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final String TIENDA = "TIENDA-MIRAFLORES";
 
     @Mock
     private PersonalTiendaRepository personalTiendaRepository;
@@ -50,7 +50,7 @@ class AuthServiceTest {
         assertThat(perfil.usuarioId()).isEqualTo(USUARIO.toString());
         assertThat(perfil.codigoVendedor()).isEqualTo("VEN-001");
         assertThat(perfil.perfilTienda()).isEqualTo("VENDEDOR");
-        assertThat(perfil.tiendaId()).isEqualTo(TIENDA.toString());
+        assertThat(perfil.tiendaId()).isEqualTo(TIENDA);
         assertThat(perfil.activo()).isTrue();
     }
 

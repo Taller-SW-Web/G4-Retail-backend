@@ -245,7 +245,7 @@ public class CajaService {
      */
     private String tiendaDe(UUID usuarioId) {
         return personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId)
-                .map(personal -> personal.getTiendaId().toString())
+                .map(PersonalTienda::getTiendaId)
                 .orElseThrow(() -> new AccesoDenegadoException("FORBIDDEN_USUARIO_SIN_TIENDA",
                         "El usuario autenticado no tiene un perfil activo en la tienda"));
     }
