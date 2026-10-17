@@ -45,10 +45,15 @@ public class SeguridadConfig {
     private static final String[] RUTAS_PUBLICAS = {"/api/v1/retail/health", "/h2-console/**"};
 
     private final String claveMock;
+    private final String jwksUri;
     private final ObjectMapper mapper;
 
-    public SeguridadConfig(@Value("${retail.seguridad.mock.clave}") String claveMock, ObjectMapper mapper) {
+    public SeguridadConfig(
+            @Value("${retail.seguridad.mock.clave}") String claveMock,
+            @Value("${retail.seguridad.jwks-uri:https://g7-auth-service.onrender.com/api/v1/auth/.well-known/jwks.json}") String jwksUri,
+            ObjectMapper mapper) {
         this.claveMock = claveMock;
+        this.jwksUri = jwksUri;
         this.mapper = mapper;
     }
 
@@ -70,18 +75,42 @@ public class SeguridadConfig {
                 .build();
     }
 
+    private volatile JwtDecoder rs256Decoder;
+
     /**
      * Decodificador del token.
      *
-     * <p>En la Semana 8 valida la firma HMAC con la clave compartida de desarrollo. Para apuntar al
-     * Seguridad real basta sustituir este bean por
-     * {@code NimbusJwtDecoder.withJwkSetUri(...)} con el JWKS de G7, definido en la seccion 2.4 del
-     * contrato.</p>
+     * <p>Soporta tanto tokens simulados HMAC (firmados con la clave de prueba para tests locales)
+     * como tokens reales RS256 emitidos por Seguridad (G7), validados contra su endpoint JWKS oficial
+     * (seccion 2.4 del contrato v0.4).</p>
      */
     @Bean
     public JwtDecoder decodificadorDeToken() {
         SecretKeySpec clave = new SecretKeySpec(claveMock.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        return NimbusJwtDecoder.withSecretKey(clave).build();
+        JwtDecoder hs256Decoder = NimbusJwtDecoder.withSecretKey(clave).build();
+
+        return token -> {
+            try {
+                String headerJson = new String(java.util.Base64.getUrlDecoder().decode(token.split("\\.")[0]), StandardCharsets.UTF_8);
+                if (headerJson.contains("\"RS256\"")) {
+                    return resolverDecodificadorRs256().decode(token);
+                }
+            } catch (Exception ignored) {
+                // Si el formato del header no es inspeccionable, delegar en hs256 para el manejo estandar de errores
+            }
+            return hs256Decoder.decode(token);
+        };
+    }
+
+    private JwtDecoder resolverDecodificadorRs256() {
+        if (rs256Decoder == null) {
+            synchronized (this) {
+                if (rs256Decoder == null) {
+                    rs256Decoder = NimbusJwtDecoder.withJwkSetUri(jwksUri).build();
+                }
+            }
+        }
+        return rs256Decoder;
     }
 
     /** Token ausente, vencido o con firma invalida: {@code 401} en el formato canonico. */

@@ -21,4 +21,7 @@ public interface PersonalTiendaRepository extends JpaRepository<PersonalTienda, 
 
     /** Perfil activo del usuario en una tienda concreta. */
     Optional<PersonalTienda> findByUsuarioIdAndTiendaIdAndActivoTrue(UUID usuarioId, UUID tiendaId);
+
+    /** Comprueba si ya existe un registro de personal para el usuarioId indicado. */
+    boolean existsByUsuarioId(UUID usuarioId);
 }
