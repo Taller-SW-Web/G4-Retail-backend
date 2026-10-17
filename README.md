@@ -92,7 +92,24 @@ contrato v0.4 marca los cuatro endpoints de Retail como **PROPUESTO**, no APROBA
 | Login | D-02 quita `/auth/login` del backend: lo atiende Seguridad (G7) y en Semana 8, su mock. | Maylle y Mihael |
 | Rutas | D-03 fija el prefijo único `/api/v1/retail/*`, en lugar de `/productos` y `/ordenes`. | Maylle y Miguel |
 
+## Despliegue en la Nube (Railway / Render)
+
+El backend cuenta con soporte para despliegue automatizado en Railway y Render mediante Dockerfile multi-etapa y `railway.json`.
+
+### Variables de Entorno de Producción
+| Variable | Descripción / Ejemplo |
+|---|---|
+| `SPRING_PROFILES_ACTIVE` | `supabase,mock` (o `supabase` si todos los módulos externos están en vivo) |
+| `SUPABASE_DB_URL` | `jdbc:postgresql://<host>:5432/postgres?sslmode=require` |
+| `SUPABASE_DB_USER` | `postgres` (o `postgres.<project-ref>` si se usa connection pooler) |
+| `SUPABASE_DB_PASSWORD` | Contraseña de la base de datos |
+| `RETAIL_CORS_ORIGENES_PERMITIDOS` | `https://g4-retail-frontend-gamma.vercel.app` |
+| `JAVA_TOOL_OPTIONS` | `-Xms128m -Xmx384m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC` |
+
+El endpoint de verificación de salud para Railway/Render está disponible públicamente en `GET /api/v1/retail/health`.
+
 ## Ramas
 
 `main` es la entrega formal y no recibe commits directos. Todo PR apunta a `develop`. El trabajo
 diario va en `feat/`, `fix/`, `docs/` o `infra/`.
+
