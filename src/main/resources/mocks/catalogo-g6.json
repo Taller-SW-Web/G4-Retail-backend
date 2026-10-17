@@ -1,0 +1,1136 @@
+{
+  "productos": [
+    {
+      "product_id": "PROD-101",
+      "slug": "zapatillas-velocity-x",
+      "name": "Zapatillas Velocity X",
+      "description": "Zapatillas Velocity X de la marca AeroSport, linea Running.",
+      "categoria_id": "CAT-RUNNING",
+      "tipo_producto_id": "TIPO-CALZADO",
+      "marca_id": "MARCA-AEROSPORT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-101-01",
+          "sku": "ZAPVEL-38-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "38"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750101000012",
+          "precio_regular": 249.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-101-02",
+          "sku": "ZAPVEL-39-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "39"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750101000029",
+          "precio_regular": 249.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-101-03",
+          "sku": "ZAPVEL-40-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "40"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750101000036",
+          "precio_regular": 249.0,
+          "precio_oferta": null,
+          "disponibilidad": "STOCK_BAJO"
+        },
+        {
+          "variant_id": "VAR-101-04",
+          "sku": "ZAPVEL-41-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "41"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750101000043",
+          "precio_regular": 249.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-102",
+      "slug": "zapatillas-trail-andes",
+      "name": "Zapatillas Trail Andes",
+      "description": "Zapatillas Trail Andes de la marca AeroSport, linea Running.",
+      "categoria_id": "CAT-RUNNING",
+      "tipo_producto_id": "TIPO-CALZADO",
+      "marca_id": "MARCA-AEROSPORT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-102-01",
+          "sku": "ZAPTRA-40-VER",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "40"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Verde"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750102000059",
+          "precio_regular": 319.0,
+          "precio_oferta": 279.0,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-102-02",
+          "sku": "ZAPTRA-41-VER",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "41"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Verde"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750102000066",
+          "precio_regular": 319.0,
+          "precio_oferta": 279.0,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-102-03",
+          "sku": "ZAPTRA-42-GRI",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "42"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Gris"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750102000073",
+          "precio_regular": 319.0,
+          "precio_oferta": 279.0,
+          "disponibilidad": "AGOTADO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-103",
+      "slug": "top-de-compresion-pro",
+      "name": "Top de compresion Pro",
+      "description": "Top de compresion Pro de la marca Inka Fit, linea Ropa.",
+      "categoria_id": "CAT-ROPA",
+      "tipo_producto_id": "TIPO-PRENDA",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-103-01",
+          "sku": "TOPDE-S-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "S"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750103000089",
+          "precio_regular": 89.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-103-02",
+          "sku": "TOPDE-M-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750103000096",
+          "precio_regular": 89.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-103-03",
+          "sku": "TOPDE-L-ROJ",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Rojo"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750103000102",
+          "precio_regular": 89.0,
+          "precio_oferta": null,
+          "disponibilidad": "STOCK_BAJO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-104",
+      "slug": "polo-tecnico-dryfit",
+      "name": "Polo tecnico DryFit",
+      "description": "Polo tecnico DryFit de la marca Inka Fit, linea Ropa.",
+      "categoria_id": "CAT-ROPA",
+      "tipo_producto_id": "TIPO-PRENDA",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-104-01",
+          "sku": "POLTEC-S-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "S"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750104000118",
+          "precio_regular": 69.9,
+          "precio_oferta": 59.9,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-104-02",
+          "sku": "POLTEC-M-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750104000125",
+          "precio_regular": 69.9,
+          "precio_oferta": 59.9,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-104-03",
+          "sku": "POLTEC-L-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750104000132",
+          "precio_regular": 69.9,
+          "precio_oferta": 59.9,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-104-04",
+          "sku": "POLTEC-XL-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "XL"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750104000149",
+          "precio_regular": 69.9,
+          "precio_oferta": 59.9,
+          "disponibilidad": "STOCK_BAJO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-105",
+      "slug": "short-running-5-pulgadas",
+      "name": "Short running 5 pulgadas",
+      "description": "Short running 5 pulgadas de la marca Inka Fit, linea Ropa.",
+      "categoria_id": "CAT-ROPA",
+      "tipo_producto_id": "TIPO-PRENDA",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-105-01",
+          "sku": "SHORUN-M-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750105000155",
+          "precio_regular": 79.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-105-02",
+          "sku": "SHORUN-L-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750105000162",
+          "precio_regular": 79.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-106",
+      "slug": "casaca-rompevientos-sierra",
+      "name": "Casaca rompevientos Sierra",
+      "description": "Casaca rompevientos Sierra de la marca Andes Gear, linea Ropa.",
+      "categoria_id": "CAT-ROPA",
+      "tipo_producto_id": "TIPO-PRENDA",
+      "marca_id": "MARCA-ANDESGEAR",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-106-01",
+          "sku": "CASROM-M-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750106000178",
+          "precio_regular": 189.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-106-02",
+          "sku": "CASROM-L-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750106000185",
+          "precio_regular": 189.0,
+          "precio_oferta": null,
+          "disponibilidad": "INDETERMINADO"
+        },
+        {
+          "variant_id": "VAR-106-03",
+          "sku": "CASROM-XL-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "XL"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750106000192",
+          "precio_regular": 189.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-107",
+      "slug": "mancuerna-hexagonal-10-kg",
+      "name": "Mancuerna hexagonal 10 kg",
+      "description": "Mancuerna hexagonal 10 kg de la marca IronPeru, linea Gym.",
+      "categoria_id": "CAT-GYM",
+      "tipo_producto_id": "TIPO-EQUIPO",
+      "marca_id": "MARCA-IRONPERU",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-107-01",
+          "sku": "MANHEX-Unica-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750107000207",
+          "precio_regular": 129.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-108",
+      "slug": "kettlebell-16-kg",
+      "name": "Kettlebell 16 kg",
+      "description": "Kettlebell 16 kg de la marca IronPeru, linea Gym.",
+      "categoria_id": "CAT-GYM",
+      "tipo_producto_id": "TIPO-EQUIPO",
+      "marca_id": "MARCA-IRONPERU",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-108-01",
+          "sku": "KET16-Unica-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750108000213",
+          "precio_regular": 189.0,
+          "precio_oferta": 169.0,
+          "disponibilidad": "STOCK_BAJO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-109",
+      "slug": "colchoneta-yoga-6-mm",
+      "name": "Colchoneta yoga 6 mm",
+      "description": "Colchoneta yoga 6 mm de la marca Inka Fit, linea Gym.",
+      "categoria_id": "CAT-GYM",
+      "tipo_producto_id": "TIPO-ACCESORIO",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-109-01",
+          "sku": "COLYOG-Unica-MOR",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Morado"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750109000229",
+          "precio_regular": 59.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-109-02",
+          "sku": "COLYOG-Unica-VER",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Verde"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750109000236",
+          "precio_regular": 59.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-110",
+      "slug": "banda-elastica-resistencia-media",
+      "name": "Banda elastica resistencia media",
+      "description": "Banda elastica resistencia media de la marca Inka Fit, linea Gym.",
+      "categoria_id": "CAT-GYM",
+      "tipo_producto_id": "TIPO-ACCESORIO",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-110-01",
+          "sku": "BANELA-Unica-ROJ",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Rojo"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750110000249",
+          "precio_regular": 39.9,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-111",
+      "slug": "balon-de-futbol-elite",
+      "name": "Balon de futbol Elite",
+      "description": "Balon de futbol Elite de la marca Andes Gear, linea Futbol.",
+      "categoria_id": "CAT-FUTBOL",
+      "tipo_producto_id": "TIPO-EQUIPO",
+      "marca_id": "MARCA-ANDESGEAR",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-111-01",
+          "sku": "BALDE-5-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "5"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750111000255",
+          "precio_regular": 149.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-111-02",
+          "sku": "BALDE-4-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "4"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750111000262",
+          "precio_regular": 149.0,
+          "precio_oferta": null,
+          "disponibilidad": "STOCK_BAJO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-112",
+      "slug": "chimpunes-terra-fg",
+      "name": "Chimpunes Terra FG",
+      "description": "Chimpunes Terra FG de la marca AeroSport, linea Futbol.",
+      "categoria_id": "CAT-FUTBOL",
+      "tipo_producto_id": "TIPO-CALZADO",
+      "marca_id": "MARCA-AEROSPORT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-112-01",
+          "sku": "CHITER-39-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "39"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750112000278",
+          "precio_regular": 279.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-112-02",
+          "sku": "CHITER-40-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "40"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750112000285",
+          "precio_regular": 279.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-112-03",
+          "sku": "CHITER-41-NAR",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "41"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Naranja"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750112000292",
+          "precio_regular": 279.0,
+          "precio_oferta": null,
+          "disponibilidad": "AGOTADO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-113",
+      "slug": "canilleras-pro-shield",
+      "name": "Canilleras Pro Shield",
+      "description": "Canilleras Pro Shield de la marca Andes Gear, linea Futbol.",
+      "categoria_id": "CAT-FUTBOL",
+      "tipo_producto_id": "TIPO-ACCESORIO",
+      "marca_id": "MARCA-ANDESGEAR",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-113-01",
+          "sku": "CANPRO-M-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750113000307",
+          "precio_regular": 49.9,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-113-02",
+          "sku": "CANPRO-L-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750113000314",
+          "precio_regular": 49.9,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-114",
+      "slug": "casco-urbano-ciclo-lima",
+      "name": "Casco urbano Ciclo Lima",
+      "description": "Casco urbano Ciclo Lima de la marca Andes Gear, linea Bici.",
+      "categoria_id": "CAT-BICI",
+      "tipo_producto_id": "TIPO-EQUIPO",
+      "marca_id": "MARCA-ANDESGEAR",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-114-01",
+          "sku": "CASURB-M-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750114000320",
+          "precio_regular": 219.0,
+          "precio_oferta": 199.0,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-114-02",
+          "sku": "CASURB-L-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750114000337",
+          "precio_regular": 219.0,
+          "precio_oferta": 199.0,
+          "disponibilidad": "STOCK_BAJO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-115",
+      "slug": "luz-led-recargable-para-bici",
+      "name": "Luz LED recargable para bici",
+      "description": "Luz LED recargable para bici de la marca Andes Gear, linea Bici.",
+      "categoria_id": "CAT-BICI",
+      "tipo_producto_id": "TIPO-ACCESORIO",
+      "marca_id": "MARCA-ANDESGEAR",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-115-01",
+          "sku": "LUZLED-Unica-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750115000343",
+          "precio_regular": 79.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-116",
+      "slug": "botella-termica-750-ml",
+      "name": "Botella termica 750 ml",
+      "description": "Botella termica 750 ml de la marca Inka Fit, linea Accesorios.",
+      "categoria_id": "CAT-ACCESORIOS",
+      "tipo_producto_id": "TIPO-ACCESORIO",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-116-01",
+          "sku": "BOTTER-Unica-ACE",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Acero"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750116000359",
+          "precio_regular": 69.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-116-02",
+          "sku": "BOTTER-Unica-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750116000366",
+          "precio_regular": 69.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-117",
+      "slug": "mochila-deportiva-25-l",
+      "name": "Mochila deportiva 25 L",
+      "description": "Mochila deportiva 25 L de la marca Andes Gear, linea Accesorios.",
+      "categoria_id": "CAT-ACCESORIOS",
+      "tipo_producto_id": "TIPO-ACCESORIO",
+      "marca_id": "MARCA-ANDESGEAR",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-117-01",
+          "sku": "MOCDEP-Unica-NEG",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Negro"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750117000372",
+          "precio_regular": 139.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-117-02",
+          "sku": "MOCDEP-Unica-AZU",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "Unica"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Azul"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750117000389",
+          "precio_regular": 139.0,
+          "precio_oferta": null,
+          "disponibilidad": "INDETERMINADO"
+        }
+      ]
+    },
+    {
+      "product_id": "PROD-118",
+      "slug": "medias-running-pack-x3",
+      "name": "Medias running pack x3",
+      "description": "Medias running pack x3 de la marca Inka Fit, linea Accesorios.",
+      "categoria_id": "CAT-ACCESORIOS",
+      "tipo_producto_id": "TIPO-PRENDA",
+      "marca_id": "MARCA-INKAFIT",
+      "tiene_variantes": true,
+      "sku_base": null,
+      "images": [],
+      "variantes": [
+        {
+          "variant_id": "VAR-118-01",
+          "sku": "MEDRUN-M-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "M"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750118000395",
+          "precio_regular": 45.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        },
+        {
+          "variant_id": "VAR-118-02",
+          "sku": "MEDRUN-L-BLA",
+          "identifying_attributes": [
+            {
+              "caracteristica_id": "CAR-TALLA",
+              "nombre": "Talla",
+              "valor": "L"
+            },
+            {
+              "caracteristica_id": "CAR-COLOR",
+              "nombre": "Color",
+              "valor": "Blanco"
+            }
+          ],
+          "non_identifying_attributes": [],
+          "images": [],
+          "codigo_barras": "7750118000401",
+          "precio_regular": 45.0,
+          "precio_oferta": null,
+          "disponibilidad": "DISPONIBLE"
+        }
+      ]
+    }
+  ]
+}
