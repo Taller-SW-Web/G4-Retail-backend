@@ -45,6 +45,7 @@ class SeguridadConfigTest {
     }
 
     @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "TEST_INTEGRACION_G7", matches = "true")
     @DisplayName("Decodifica un token real RS256 emitido por Seguridad (G7) validando su firma con JWKS")
     void decodificaTokenRealRs256G7() {
         String tokenG7 = "eyJraWQiOiIxMlZuU2xnZXNtMG9rVlJNQWRsdFh5Ui13SkJ4c1JJNDRRaU9jbm0xWGVRIiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ."
