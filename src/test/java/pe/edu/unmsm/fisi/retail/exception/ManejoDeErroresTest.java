@@ -18,7 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * resuelve la infraestructura web antes de llegar a cualquier controlador.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("local")
+// Desde F2 el contexto necesita un ProductosPort; el perfil "mock" provee el doble de G6.
+@ActiveProfiles({"local", "mock"})
 class ManejoDeErroresTest {
 
     @Autowired
