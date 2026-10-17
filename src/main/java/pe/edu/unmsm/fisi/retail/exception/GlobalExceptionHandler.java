@@ -9,6 +9,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -38,9 +39,22 @@ public class GlobalExceptionHandler {
                 ex.getMessage(), peticion, List.of());
     }
 
+    @ExceptionHandler(AccesoDenegadoException.class)
+    public ProblemDetail manejarAccesoDenegado(AccesoDenegadoException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.FORBIDDEN, ex.getCodigo(), "Acceso denegado",
+                ex.getMessage(), peticion, List.of());
+    }
+
     @ExceptionHandler(ReglaNegocioException.class)
     public ProblemDetail manejarReglaNegocio(ReglaNegocioException ex, HttpServletRequest peticion) {
         return construir(HttpStatus.UNPROCESSABLE_ENTITY, ex.getCodigo(), "Regla de negocio no cumplida",
+                ex.getMessage(), peticion, List.of());
+    }
+
+    /** Choque con el estado actual del recurso (por ejemplo, turno de caja ya abierto): {@code 409}. */
+    @ExceptionHandler(ConflictoException.class)
+    public ProblemDetail manejarConflicto(ConflictoException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.CONFLICT, ex.getCodigo(), "Conflicto con el estado actual",
                 ex.getMessage(), peticion, List.of());
     }
 
@@ -70,6 +84,17 @@ public class GlobalExceptionHandler {
         List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getName(), "Tipo o formato invalido"));
         return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
                 "El parametro " + ex.getName() + " no tiene el tipo esperado", peticion, errores);
+    }
+
+    /**
+     * Ruta inexistente. Spring la senala con {@link NoResourceFoundException}; sin este manejador
+     * caeria en el de {@code Exception} y responderia {@code 500}, haciendo imposible que el cliente
+     * distinga "no existe" de "el servidor fallo". El contrato exige {@code 404} (seccion 2.5).
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ProblemDetail manejarRutaInexistente(NoResourceFoundException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.NOT_FOUND, "RUTA_NO_ENCONTRADA", "Recurso no encontrado",
+                "La ruta solicitada no existe en este servicio", peticion, List.of());
     }
 
     /** Red de seguridad: nada sale del backend sin el formato canonico. */
