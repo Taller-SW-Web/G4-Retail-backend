@@ -1,0 +1,41 @@
+# CI del backend: en cada push o PR corre los tests unitarios (JUnit + MockMvc, con H2
+# en memoria y perfil mock) y empaqueta el .jar. El despliegue lo sigue haciendo Railway.
+name: CI backend
+
+on:
+  push:
+    branches: [main, develop, 'feat/**', 'fix/**']
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-y-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Tests unitarios y empaquetado
+        run: |
+          chmod +x mvnw
+          ./mvnw -B verify
+
+      - name: Guardar el reporte de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reporte-tests
+          path: target/surefire-reports
+
+      - name: Guardar el .jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: target/*.jar
