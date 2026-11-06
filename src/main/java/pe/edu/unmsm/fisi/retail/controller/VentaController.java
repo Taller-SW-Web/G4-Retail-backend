@@ -2,9 +2,12 @@ package pe.edu.unmsm.fisi.retail.controller;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,7 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
-import pe.edu.unmsm.fisi.retail.service.VentaService;
+import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
+import pe.edu.unmsm.fisi.retail.service.CobroMostradorService;
+
+import java.util.UUID;
 
 /**
  * Endpoint transaccional de cierre de venta presencial en mostrador (F5).
@@ -46,7 +52,7 @@ import pe.edu.unmsm.fisi.retail.service.VentaService;
 @RequiredArgsConstructor
 public class VentaController {
 
-    private final VentaService ventaService;
+    private final CobroMostradorService ventaService;
 
     /**
      * Registra la venta, emite el comprobante y devuelve los datos para el ticket termico.
@@ -57,13 +63,21 @@ public class VentaController {
      */
     @PostMapping
     public ResponseEntity<VentaResponse> registrarVenta(
+            @AuthenticationPrincipal Jwt token,
             @RequestHeader("Idempotency-Key")
             @NotBlank(message = "El header Idempotency-Key es obligatorio")
+            @Size(max = 64)
             String idempotencyKey,
 
             @Valid @RequestBody VentaRequest request
     ) {
-        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey);
+        UUID usuario;
+        try {
+            usuario = UUID.fromString(token.getSubject());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new AccesoDenegadoException("TOKEN_SIN_USUARIO_VALIDO", "El token no identifica un usuario válido");
+        }
+        VentaResponse respuesta = ventaService.registrar(usuario, idempotencyKey, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 }

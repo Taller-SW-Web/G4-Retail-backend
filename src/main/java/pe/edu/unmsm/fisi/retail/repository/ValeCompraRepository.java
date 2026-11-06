@@ -1,6 +1,7 @@
 package pe.edu.unmsm.fisi.retail.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import pe.edu.unmsm.fisi.retail.model.ValeCompra;
 
 import java.util.Optional;
@@ -11,6 +12,6 @@ public interface ValeCompraRepository extends JpaRepository<ValeCompra, UUID> {
 
     Optional<ValeCompra> findBySolicitudId(UUID solicitudId);
 
-    /** Cuantos vales tienen un prefijo dado, para numerar el siguiente del anio. */
-    long countByCodigoValeStartingWith(String prefijo);
+    @Query(value = "SELECT nextval('ret_vale_codigo_seq')", nativeQuery = true)
+    long siguienteCorrelativo();
 }

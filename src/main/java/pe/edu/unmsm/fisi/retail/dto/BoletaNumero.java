@@ -8,7 +8,7 @@ package pe.edu.unmsm.fisi.retail.dto;
  */
 public final class BoletaNumero {
 
-    public static final String PATRON = "^[BF]\\d{3}-\\d{8}$";
+    public static final String PATRON = "^B001-[0-9]{8}$";
     public static final String MENSAJE = "El comprobante debe tener el formato B001-00000045";
 
     private BoletaNumero() {

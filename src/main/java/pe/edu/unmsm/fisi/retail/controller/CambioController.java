@@ -54,8 +54,9 @@ public class CambioController {
      */
     @GetMapping("/validar/{boletaNumero}")
     public ValidarCambioResponse validar(
+            @AuthenticationPrincipal Jwt token,
             @PathVariable @Pattern(regexp = BoletaNumero.PATRON, message = BoletaNumero.MENSAJE) String boletaNumero) {
-        return cambioService.validar(boletaNumero);
+        return cambioService.validar(usuarioDelToken(token), boletaNumero);
     }
 
     /**

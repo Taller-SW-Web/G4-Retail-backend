@@ -13,5 +13,5 @@ import java.util.Optional;
 public interface BoletasEmitidasPort {
 
     /** Busca una boleta por su numero exacto, por ejemplo {@code B001-00000045}. */
-    Optional<BoletaEmitida> buscarPorNumero(String numero);
+    Optional<BoletaEmitida> buscarPorNumero(String numero, String tienda, boolean bloquear);
 }

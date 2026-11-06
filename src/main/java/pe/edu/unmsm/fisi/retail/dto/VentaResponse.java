@@ -2,6 +2,7 @@ package pe.edu.unmsm.fisi.retail.dto;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * Respuesta del {@code POST /api/v1/retail/ventas}.
@@ -32,7 +33,9 @@ public record VentaResponse(
          * Ticket de cambio para regalo. {@code null} si {@code emitirTicketRegalo = false}
          * en la solicitud.
          */
-        TicketRegalo ticketRegalo
+        TicketRegalo ticketRegalo,
+
+        List<VentaRequest.ItemVentaDto> items
 
 ) {
 
