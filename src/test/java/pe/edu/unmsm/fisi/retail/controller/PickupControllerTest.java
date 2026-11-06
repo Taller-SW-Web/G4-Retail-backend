@@ -26,10 +26,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * pedido que no está en la bandeja responde {@code 404}. Las rutas son las canónicas del contrato
  * (§5.7).</p>
  *
- * <p>Usa los pedidos de ejemplo en memoria (nunca llama a Ventas real) y arranca cada prueba con un
+ * <p>Sin secreto de G7 el modo {@code auto} usa los pedidos de ejemplo en memoria (nunca llama a Ventas
+ * real). No se fija la propiedad aqui para compartir el contexto de Spring con las demas pruebas: un
+ * contexto propio, al cerrarse, borraria las tablas de la base H2 compartida. Cada prueba arranca con un
  * contexto limpio porque las entregas se guardan en memoria.</p>
  */
-@SpringBootTest(properties = "retail.integracion.ventas.pickup.modo=memoria")
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({"local", "mock"})
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
