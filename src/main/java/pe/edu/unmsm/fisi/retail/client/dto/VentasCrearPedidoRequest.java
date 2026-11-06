@@ -1,5 +1,7 @@
 package pe.edu.unmsm.fisi.retail.client.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -13,6 +15,7 @@ public record VentasCrearPedidoRequest(
         String canal,
         Contacto contacto,
         List<Item> items,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         Cupon cupon,
         Envio envio,
         Pago pago
@@ -40,6 +43,7 @@ public record VentasCrearPedidoRequest(
             Boolean aplicado
     ) {}
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Envio(
             String modalidad,
             BigDecimal costo,
@@ -52,6 +56,7 @@ public record VentasCrearPedidoRequest(
             String tiendaId
     ) {}
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Pago(
             String metodoPago,
             String moneda,
@@ -60,8 +65,16 @@ public record VentasCrearPedidoRequest(
             BigDecimal costoEnvio,
             BigDecimal total,
             String referenciaOperacion,
+            String comprobanteReferencia,
             BigDecimal montoEfectivo,
             BigDecimal montoTarjeta,
             OffsetDateTime fechaVenta
-    ) {}
+    ) {
+        public Pago(String metodoPago, String moneda, BigDecimal subtotal, BigDecimal descuentoCupon,
+                    BigDecimal costoEnvio, BigDecimal total, String referenciaOperacion,
+                    BigDecimal montoEfectivo, BigDecimal montoTarjeta, OffsetDateTime fechaVenta) {
+            this(metodoPago, moneda, subtotal, descuentoCupon, costoEnvio, total, referenciaOperacion,
+                    null, montoEfectivo, montoTarjeta, fechaVenta);
+        }
+    }
 }
