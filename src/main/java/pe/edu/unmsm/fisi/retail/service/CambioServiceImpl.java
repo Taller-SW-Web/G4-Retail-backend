@@ -92,8 +92,8 @@ public class CambioServiceImpl implements CambioService {
 
     @Override
     @Transactional(readOnly = true)
-    public ValidarCambioResponse validar(String boletaNumero) {
-        BoletaEmitida boleta = boletaApta(boletaNumero);
+    public ValidarCambioResponse validar(UUID usuarioId, String boletaNumero) {
+        BoletaEmitida boleta = boletaApta(boletaNumero, vendedorActivo(usuarioId).getTiendaId(), false);
         PoliticaPlazoCambio.Evaluacion plazo = politicaPlazo.evaluar(boleta.fechaEmision());
 
         List<ValidarCambioResponse.ItemCambiable> items = boleta.items().stream()
@@ -109,20 +109,25 @@ public class CambioServiceImpl implements CambioService {
     @Override
     @Transactional
     public ValeCompraResponse registrar(UUID usuarioId, String idempotencyKey, RegistroCambioRequest peticion) {
+        PersonalTienda vendedor = vendedorActivo(usuarioId);
         var repetida = solicitudCambioRepository.findByIdempotencyKey(idempotencyKey);
         if (repetida.isPresent()) {
-            return respuestaRepetida(repetida.get(), peticion);
+            return respuestaRepetida(usuarioId, repetida.get(), peticion);
         }
-
-        PersonalTienda vendedor = personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId)
-                .orElseThrow(() -> new AccesoDenegadoException("FORBIDDEN_USUARIO_SIN_TIENDA",
-                        "El usuario autenticado no tiene un perfil activo en la tienda"));
+        if (peticion.motivo() == pe.edu.unmsm.fisi.retail.model.MotivoCambio.FALLA_FABRICA) {
+            throw new ReglaNegocioException("GARANTIA_REQUIERE_POSTVENTA",
+                    "Deriva la falla de fábrica a Postventa para revisión de garantía");
+        }
         CajaSesion turno = cajaSesionRepository
                 .findFirstByTiendaIdAndEstadoOrderByFechaHoraAperturaDesc(vendedor.getTiendaId(), EstadoCajaSesion.ABIERTA)
                 .orElseThrow(() -> new ReglaNegocioException("CAJA_NO_ABIERTA",
                         "Abre el turno de caja antes de registrar un cambio"));
 
-        BoletaEmitida boleta = boletaApta(peticion.boletaNumero());
+        BoletaEmitida boleta = boletaApta(peticion.boletaNumero(), vendedor.getTiendaId(), true);
+        repetida = solicitudCambioRepository.findByIdempotencyKey(idempotencyKey);
+        if (repetida.isPresent()) {
+            return respuestaRepetida(usuarioId, repetida.get(), peticion);
+        }
         if (!politicaPlazo.evaluar(boleta.fechaEmision()).plazoValido()) {
             throw new ReglaNegocioException("PLAZO_VENCIDO",
                     "El plazo de cambio de la boleta " + boleta.numero() + " ya vencio");
@@ -151,6 +156,7 @@ public class CambioServiceImpl implements CambioService {
 
         SolicitudCambio solicitud = solicitudCambioRepository.save(SolicitudCambio.builder()
                 .cajaSesionId(turno.getIdSesion())
+                .ventaId(boleta.ventaId())
                 .vendedorId(usuarioId)
                 .boletaNumero(boleta.numero())
                 .pedidoIdOrigen(boleta.pedidoId())
@@ -184,9 +190,19 @@ public class CambioServiceImpl implements CambioService {
                 inspeccion.observaciones());
     }
 
-    /** La boleta existe y su pedido admite cambios. */
-    private BoletaEmitida boletaApta(String boletaNumero) {
-        BoletaEmitida boleta = boletas.buscarPorNumero(boletaNumero)
+    private PersonalTienda vendedorActivo(UUID usuarioId) {
+        var vendedor = personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId)
+                .orElseThrow(() -> new AccesoDenegadoException("FORBIDDEN_USUARIO_SIN_TIENDA",
+                        "El usuario autenticado no tiene un perfil activo en la tienda"));
+        if (vendedor.getPerfilTienda() == pe.edu.unmsm.fisi.retail.model.PerfilTienda.CAJERO) {
+            throw new AccesoDenegadoException("ROL_NO_PERMITIDO", "El perfil no puede gestionar cambios");
+        }
+        return vendedor;
+    }
+
+    /** La boleta de la tienda existe y su pedido admite cambios. */
+    private BoletaEmitida boletaApta(String boletaNumero, String tienda, boolean bloquear) {
+        BoletaEmitida boleta = boletas.buscarPorNumero(boletaNumero, tienda, bloquear)
                 .orElseThrow(() -> new RecursoNoEncontradoException("COMPROBANTE_NO_ENCONTRADO",
                         "No existe el comprobante " + boletaNumero));
         if (!ESTADOS_APTOS.contains(boleta.estado())) {
@@ -203,11 +219,11 @@ public class CambioServiceImpl implements CambioService {
         return (int) Math.max(0, item.cantidad() - cambiadas);
     }
 
-    /** {@code VALE-2026-00001}: anio de la tienda y correlativo anual. */
+    /** Año de emisión en la tienda y correlativo durable. */
     private String siguienteCodigoVale(OffsetDateTime ahora) {
         int anio = ahora.atZoneSameInstant(PoliticaPlazoCambio.ZONA_TIENDA).getYear();
         String prefijo = "VALE-" + anio + "-";
-        long siguiente = valeCompraRepository.countByCodigoValeStartingWith(prefijo) + 1;
+        long siguiente = valeCompraRepository.siguienteCorrelativo();
         return prefijo + String.format("%05d", siguiente);
     }
 
@@ -215,11 +231,16 @@ public class CambioServiceImpl implements CambioService {
      * La misma clave de idempotencia con la misma peticion devuelve el vale ya emitido; con una peticion
      * distinta es un error del cliente, no un reintento.
      */
-    private ValeCompraResponse respuestaRepetida(SolicitudCambio solicitud, RegistroCambioRequest peticion) {
-        boolean mismaPeticion = solicitud.getBoletaNumero().equals(peticion.boletaNumero())
+    private ValeCompraResponse respuestaRepetida(UUID usuario, SolicitudCambio solicitud, RegistroCambioRequest peticion) {
+        boolean mismaPeticion = usuario.equals(solicitud.getVendedorId())
+                && solicitud.getBoletaNumero().equals(peticion.boletaNumero())
                 && solicitud.getVarianteSku().equals(peticion.sku())
                 && solicitud.getCantidad() == peticion.cantidad()
-                && solicitud.getMotivoCambio() == peticion.motivo();
+                && solicitud.getMotivoCambio() == peticion.motivo()
+                && Objects.equals(solicitud.getClienteId(), peticion.clienteId())
+                && solicitud.isInspeccionEtiquetas() == peticion.inspeccion().etiquetasIntactas()
+                && solicitud.isInspeccionSinUso() == peticion.inspeccion().sinSignosUso()
+                && solicitud.isInspeccionEmpaque() == peticion.inspeccion().empaqueOriginal();
         if (!mismaPeticion) {
             throw new ConflictoException("IDEMPOTENCY_CONFLICT",
                     "La clave de idempotencia ya se uso con una solicitud de cambio distinta");

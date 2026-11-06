@@ -17,7 +17,7 @@ public interface CambioService {
      * Valida un comprobante para un cambio (RF-23): que exista, que el pedido este pagado o entregado,
      * cuantos dias van desde la compra y cuantas unidades de cada prenda quedan por cambiar.
      */
-    ValidarCambioResponse validar(String boletaNumero);
+    ValidarCambioResponse validar(UUID usuarioId, String boletaNumero);
 
     /**
      * Registra el cambio con su inspeccion fisica (RF-24) y emite el vale de compra (RF-25).

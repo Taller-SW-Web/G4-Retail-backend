@@ -3,6 +3,7 @@ package pe.edu.unmsm.fisi.retail.integracion.boletas;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Boleta o factura emitida en mostrador, tal como la necesita F9 para validar un cambio.
@@ -13,7 +14,12 @@ import java.util.List;
  * @param estado       estado del pedido: solo {@code PAGADO} y {@code ENTREGADO} admiten cambio
  * @param items        prendas compradas
  */
-public record BoletaEmitida(String numero, String pedidoId, Instant fechaEmision, String estado, List<Item> items) {
+public record BoletaEmitida(String numero, String pedidoId, Instant fechaEmision, String estado, List<Item> items,
+                           UUID ventaId) {
+
+    public BoletaEmitida(String numero, String pedidoId, Instant fechaEmision, String estado, List<Item> items) {
+        this(numero, pedidoId, fechaEmision, estado, items, null);
+    }
 
     public BoletaEmitida {
         items = items == null ? List.of() : List.copyOf(items);

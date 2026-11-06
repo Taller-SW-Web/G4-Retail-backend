@@ -30,6 +30,12 @@ import java.util.UUID;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(ServicioExternoNoDisponibleException.class)
+    public ProblemDetail manejarServicioExterno(ServicioExternoNoDisponibleException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.SERVICE_UNAVAILABLE, ex.getCodigo(), "Servicio externo no disponible",
+                ex.getMessage(), peticion, List.of());
+    }
+
     private static final String BASE_TIPO = "https://retail.g4/problemas/";
     private static final String ENCABEZADO_CORRELACION = "X-Correlation-Id";
 

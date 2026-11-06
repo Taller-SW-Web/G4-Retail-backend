@@ -139,7 +139,17 @@ public class VentaService {
         OffsetDateTime ahora = OffsetDateTime.now();
         String pedidoId = resolverPedidoId(request, totalCalculado, ahora, idempotencyKey);
         String ventaId = UUID.randomUUID().toString();
+        boolean factura = "FACTURA".equals(request.comprobante().tipo());
+        String serie = factura ? "F001" : "B001";
+        int numero = factura ? correlativoFactura.getAndIncrement() : correlativoBoleta.getAndIncrement();
+        VentaResponse respuesta = emitirRespuesta(request, totalCalculado, ahora, pedidoId, ventaId,
+                serie, String.format("%05d", numero), "PAGADO");
+        cacheIdempotencia.put(idempotencyKey, respuesta);
+        return respuesta;
+    }
 
+    VentaResponse emitirRespuesta(VentaRequest request, BigDecimal totalCalculado, OffsetDateTime ahora,
+                                  String pedidoId, String ventaId, String serie, String correlativo, String estadoPedido) {
         // 3. Calcular descomposicion fiscal
         BigDecimal igv = totalCalculado
                 .multiply(TASA_IGV)
@@ -157,14 +167,6 @@ public class VentaService {
             montoRecibido = totalCalculado;
             vuelto = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
-
-        // 5. Determinar serie y correlativo segun tipo de comprobante
-        String tipoComprobante = request.comprobante().tipo();
-        String serie = "FACTURA".equals(tipoComprobante) ? "F001" : "B001";
-        int correlativoNum = "FACTURA".equals(tipoComprobante)
-                ? correlativoFactura.getAndIncrement()
-                : correlativoBoleta.getAndIncrement();
-        String correlativo = String.format("%05d", correlativoNum);
 
         // 6. Armar cadena QR de verificacion SUNAT
         String doc = request.comprobante().numeroDocumento() != null
@@ -199,16 +201,9 @@ public class VentaService {
             );
         }
 
-        VentaResponse respuesta = new VentaResponse(
-                ventaId, pedidoId, "PAGADO", pagoResumen, comprobante, ticketRegalo
+        return new VentaResponse(
+                ventaId, pedidoId, estadoPedido, pagoResumen, comprobante, ticketRegalo, request.items()
         );
-
-        // 10. Guardar en cache de idempotencia y loguear auditoria
-        cacheIdempotencia.put(idempotencyKey, respuesta);
-        log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={} vuelto={}",
-                ventaId, pedidoId, serie, correlativo, request.terminalPos(), totalCalculado, vuelto);
-
-        return respuesta;
     }
 
     // ── Metodos privados de calculo ─────────────────────────────────────────
@@ -300,7 +295,8 @@ public class VentaService {
                                     OffsetDateTime ahora, String idempotencyKey) {
         if (ventasClient != null) {
             try {
-                VentasCrearPedidoRequest pedidoRequest = armarPedidoVentasRequest(request, totalCalculado, ahora);
+                VentasCrearPedidoRequest pedidoRequest = armarPedidoVentasRequest(request, totalCalculado, ahora,
+                        "TIENDA-MIRAFLORES");
                 Optional<VentasPedidoResponse> respuestaVentas = ventasClient.crearPedido(pedidoRequest, idempotencyKey);
                 if (respuestaVentas.isPresent() && respuestaVentas.get().pedidoId() != null) {
                     log.info("Pedido registrado exitosamente con identificador de Ventas G5: {}",
@@ -317,7 +313,8 @@ public class VentaService {
     /**
      * Transforma los datos de la venta de mostrador al formato canónico de Ventas (G5).
      */
-    VentasCrearPedidoRequest armarPedidoVentasRequest(VentaRequest request, BigDecimal totalCalculado, OffsetDateTime ahora) {
+    VentasCrearPedidoRequest armarPedidoVentasRequest(VentaRequest request, BigDecimal totalCalculado,
+                                                     OffsetDateTime ahora, String tiendaId) {
         UUID clienteUuid;
         try {
             clienteUuid = (request.clienteId() != null && !request.clienteId().isBlank())
@@ -364,7 +361,7 @@ public class VentaService {
                 "Miraflores",
                 "Tienda Mostrador",
                 request.terminalPos(),
-                "TIENDA-MIRAFLORES"
+                tiendaId
         );
 
         String medioPago = request.pago().medioPago();

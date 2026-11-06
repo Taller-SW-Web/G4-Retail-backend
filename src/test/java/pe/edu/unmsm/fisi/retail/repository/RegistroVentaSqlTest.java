@@ -2,11 +2,9 @@ package pe.edu.unmsm.fisi.retail.repository;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.util.UUID;
@@ -21,15 +19,13 @@ class RegistroVentaSqlTest {
     @Test
     void recuperaLaCompraPorBoletaTrasReabrirLaBaseYNoRepiteElCorrelativo() throws Exception {
         String url = "jdbc:h2:file:" + directorio.resolve("retail") + ";MODE=PostgreSQL";
-        String migracion = Files.readString(Path.of("diseño_bd/migracion-f5-registro-venta.sql"));
-        String ddl = migracion.replaceAll("(?m)^ALTER TABLE .+ ENABLE ROW LEVEL SECURITY;\\s*$", "");
         UUID turno = UUID.randomUUID();
         UUID venta = UUID.randomUUID();
 
         try (var conexion = DriverManager.getConnection(url, "sa", "");
              var sql = conexion.createStatement()) {
             sql.execute("CREATE TABLE ret_caja_sesion (id_sesion UUID PRIMARY KEY)");
-            ScriptUtils.executeSqlScript(conexion, new ByteArrayResource(ddl.getBytes(StandardCharsets.UTF_8)));
+            ScriptUtils.executeSqlScript(conexion, new ClassPathResource("db/registro-venta.sql"));
             sql.executeUpdate("INSERT INTO ret_caja_sesion VALUES ('" + turno + "')");
             try (var insertar = conexion.prepareStatement("""
                     INSERT INTO ret_venta (id_venta, caja_sesion_id, tienda_id, pedido_id, serie,

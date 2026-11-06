@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  * <p>Los SKU coinciden con los del mock de Productos (G6), para que la demo sea coherente.</p>
  */
 @Component
-@Profile("mock")
+@Profile("local & mock")
 public class BoletasEmitidasMock implements BoletasEmitidasPort {
 
     private final Map<String, BoletaEmitida> boletas;
@@ -51,7 +51,7 @@ public class BoletasEmitidasMock implements BoletasEmitidasPort {
     }
 
     @Override
-    public Optional<BoletaEmitida> buscarPorNumero(String numero) {
+    public Optional<BoletaEmitida> buscarPorNumero(String numero, String tienda, boolean bloquear) {
         return Optional.ofNullable(numero).map(boletas::get);
     }
 }

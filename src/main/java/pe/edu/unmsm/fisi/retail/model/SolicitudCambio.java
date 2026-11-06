@@ -49,6 +49,9 @@ public class SolicitudCambio {
     @Column(name = "caja_sesion_id", nullable = false)
     private UUID cajaSesionId;
 
+    @Column(name = "venta_id")
+    private UUID ventaId;
+
     /** Vendedor que hizo la inspeccion (RF-24: el registro guarda al auditor). */
     @Column(name = "vendedor_id", nullable = false)
     private UUID vendedorId;
@@ -58,11 +61,11 @@ public class SolicitudCambio {
     private String boletaNumero;
 
     /** Pedido central en Ventas (G5), si se conoce. */
-    @Column(name = "pedido_id_origen", length = 20)
+    @Column(name = "pedido_id_origen", columnDefinition = "text")
     private String pedidoIdOrigen;
 
     /** SKU de la prenda devuelta. */
-    @Column(name = "variante_sku_devuelta_id", nullable = false, length = 40)
+    @Column(name = "variante_sku_devuelta_id", nullable = false, columnDefinition = "text")
     private String varianteSku;
 
     /** Puede ser nulo: en mostrador no siempre se identifica al cliente. */
