@@ -97,6 +97,12 @@ public class GlobalExceptionHandler {
                 "La ruta solicitada no existe en este servicio", peticion, List.of());
     }
 
+    @ExceptionHandler(ServicioExternoNoDisponibleException.class)
+    public ProblemDetail manejarServicioExterno(ServicioExternoNoDisponibleException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.SERVICE_UNAVAILABLE, ex.getCodigo(), "Servicio externo no disponible",
+                ex.getMessage(), peticion, List.of());
+    }
+
     /** Red de seguridad: nada sale del backend sin el formato canonico. */
     @ExceptionHandler(Exception.class)
     public ProblemDetail manejarNoControlada(Exception ex, HttpServletRequest peticion) {
