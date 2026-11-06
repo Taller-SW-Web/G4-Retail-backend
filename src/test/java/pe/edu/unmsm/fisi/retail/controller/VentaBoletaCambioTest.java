@@ -30,7 +30,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+// El flujo confirma transacciones reales. Usa una base propia para aislar sus turnos y ventas.
+@SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:venta-boleta-cambio;MODE=PostgreSQL")
 @AutoConfigureMockMvc
 @ActiveProfiles({"local", "mock"})
 class VentaBoletaCambioTest {
