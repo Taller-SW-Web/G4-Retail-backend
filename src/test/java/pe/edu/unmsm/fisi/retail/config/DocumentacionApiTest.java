@@ -43,6 +43,14 @@ class DocumentacionApiTest {
     }
 
     @Test
+    @DisplayName("El servidor documentado es relativo para que «Try it out» use el mismo origen HTTPS")
+    void servidorRelativo() throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.servers[0].url").value("/"));
+    }
+
+    @Test
     @DisplayName("Swagger UI se abre sin token en /swagger-ui.html")
     void swaggerUiPublico() throws Exception {
         mvc.perform(get("/swagger-ui/index.html"))

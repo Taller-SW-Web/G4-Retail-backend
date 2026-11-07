@@ -6,8 +6,11 @@ import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 /**
  * Catálogo OpenAPI de la API de Retail (contrato {@code specs/generales/api-contracts.md}).
@@ -36,6 +39,9 @@ public class OpenApiConfig {
                         .scheme("bearer")
                         .bearerFormat("JWT")
                         .description("Token de acceso RS256 emitido por Seguridad (G7).")))
+                // Relativo: detrás del proxy HTTPS de Railway la URL generada saldría como http://
+                // y el navegador bloquearía las pruebas desde Swagger UI.
+                .servers(List.of(new Server().url("/").description("Mismo origen que esta documentación")))
                 .addSecurityItem(new SecurityRequirement().addList(ESQUEMA_SEGURIDAD));
     }
 }
