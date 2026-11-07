@@ -1,27 +1,26 @@
-# ---------------------------------------------------------------------------
-# Caller: Analisis de Pull Request — G4 Retail Backend
-# Ejecuta la pipeline de CI delegando toda la orquestacion al template
-# reutilizable de devsecops-templates (workflow-ci-maven).
-#
-# No contiene jobs locales de ejecucion. El mic solo declara cuando
-# ejecutar y que datos pasar al template.
-# ---------------------------------------------------------------------------
-name: "PR Analysis — ms-retail-backend"
-
-on:
+name: Pull Request Security Review
+run-name: CI | ${{ github.event.pull_request.head.ref || github.ref_name }} -> ${{ github.base_ref || github.ref_name }}
+'on':
   pull_request:
-    branches: [main, develop]
-  push:
-    branches: [develop, "feat/**", "fix/**"]
-  workflow_dispatch:
-
+    branches:
+    - develop
+    - main
 permissions:
   contents: read
-
+  actions: read
+  security-events: write
+  pull-requests: write
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
-  ci_pipeline:
-    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-ci-maven.yml@main
+  quality:
+    name: Security Analysis
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-pr-analysis.yml@eee89429526f60fd9b91f65b334c2332451daeb9
     with:
       component_name: ms-retail-backend
-      java_version: "21"
-      maven_goals: verify
+      technology: maven
+      language: java
+      sonar_host_url: ${{ vars.SONAR_HOST_URL }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
