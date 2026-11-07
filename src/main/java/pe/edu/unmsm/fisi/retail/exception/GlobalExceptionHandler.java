@@ -4,10 +4,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -25,7 +29,6 @@ import java.util.UUID;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
     private static final String BASE_TIPO = "https://retail.g4/problemas/";
     private static final String ENCABEZADO_CORRELACION = "X-Correlation-Id";
 
@@ -77,6 +80,48 @@ public class GlobalExceptionHandler {
                 .toList();
         return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
                 "Revise los campos indicados en errores[]", peticion, errores);
+    }
+
+    /** Cabecera obligatoria ausente, por ejemplo {@code Idempotency-Key} (seccion 2.3 del contrato). */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ProblemDetail manejarCabeceraAusente(MissingRequestHeaderException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getHeaderName(), "Es obligatorio"));
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_OBLIGATORIO", "Falta un parametro obligatorio",
+                "Falta la cabecera " + ex.getHeaderName(), peticion, errores);
+    }
+
+    /** Cuerpo ilegible: JSON mal formado o un valor fuera de una enumeracion, como un motivo inexistente. */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail manejarCuerpoIlegible(HttpMessageNotReadableException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
+                "El cuerpo de la peticion no es valido o tiene un valor no permitido", peticion, List.of());
+    }
+
+    /** Restriccion incumplida en un parametro de ruta o de consulta, validado por Spring. */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ProblemDetail manejarParametroRechazado(HandlerMethodValidationException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = ex.getParameterValidationResults().stream()
+                .flatMap(resultado -> resultado.getResolvableErrors().stream()
+                        .map(error -> new ErrorCampo(resultado.getMethodParameter().getParameterName(),
+                                error.getDefaultMessage())))
+                .toList();
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
+                "Revise los campos indicados en errores[]", peticion, errores);
+    }
+
+    /** La misma restriccion, cuando el controlador usa {@code @Validated}. */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail manejarRestriccion(ConstraintViolationException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = ex.getConstraintViolations().stream()
+                .map(v -> new ErrorCampo(ultimoTramo(v.getPropertyPath().toString()), v.getMessage()))
+                .toList();
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
+                "Revise los campos indicados en errores[]", peticion, errores);
+    }
+
+    private static String ultimoTramo(String ruta) {
+        int punto = ruta.lastIndexOf('.');
+        return punto < 0 ? ruta : ruta.substring(punto + 1);
     }
 
     /** Parametro de query obligatorio ausente (seccion 2.6 del contrato). */

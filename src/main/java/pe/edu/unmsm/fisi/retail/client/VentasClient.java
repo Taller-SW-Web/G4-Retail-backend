@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
+import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -30,15 +31,18 @@ public class VentasClient {
 
     private final RestClient restClient;
     private final boolean habilitado;
+    private final TokenServicioG7 tokenServicio;
 
     @Autowired
     public VentasClient(
             @Value("${retail.integracion.ventas.url:https://g5-servicio-ventas.onrender.com}") String baseUrl,
             @Value("${retail.integracion.ventas.habilitado:true}") boolean habilitado,
             @Value("${retail.integracion.ventas.timeout-ms:3500}") int timeoutMs,
-            @Autowired(required = false) RestClient.Builder restClientBuilder
+            @Autowired(required = false) RestClient.Builder restClientBuilder,
+            TokenServicioG7 tokenServicio
     ) {
         this.habilitado = habilitado;
+        this.tokenServicio = tokenServicio;
 
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(timeoutMs));
@@ -58,6 +62,7 @@ public class VentasClient {
     public VentasClient(RestClient restClient, boolean habilitado) {
         this.restClient = restClient;
         this.habilitado = habilitado;
+        this.tokenServicio = null;
     }
 
     /**
@@ -80,6 +85,11 @@ public class VentasClient {
             VentasPedidoResponse respuesta = restClient.post()
                     .uri("/api/v1/pedidos")
                     .header("Idempotency-Key", idempotencyKey != null ? idempotencyKey : "")
+                    .headers(headers -> {
+                        if (tokenServicio != null && tokenServicio.configurado()) {
+                            headers.setBearerAuth(tokenServicio.obtener());
+                        }
+                    })
                     .body(request)
                     .retrieve()
                     .body(VentasPedidoResponse.class);

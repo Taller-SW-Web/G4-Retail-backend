@@ -81,7 +81,6 @@ public record VentaRequest(
             int cantidad,
 
             /** Precio unitario final aplicado al momento de la venta (mock Semana 8). */
-            @NotNull(message = "El precioFinal es obligatorio")
             @DecimalMin(value = "0.01", message = "El precioFinal debe ser mayor que cero")
             BigDecimal precioFinal
 

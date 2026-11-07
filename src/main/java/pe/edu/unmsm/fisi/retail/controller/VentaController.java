@@ -2,6 +2,7 @@ package pe.edu.unmsm.fisi.retail.controller;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
+import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.service.VentaService;
 
 import java.util.UUID;
@@ -57,19 +59,26 @@ public class VentaController {
      *
      * @param idempotencyKey clave unica generada por el cliente (UUID recomendado)
      * @param request        cuerpo de la venta con items, pago y comprobante
+     * @param token          JWT del usuario autenticado
      * @return {@code 201 Created} con el pedidoId, comprobante y ticket de regalo (si aplica)
      */
     @PostMapping
     public ResponseEntity<VentaResponse> registrarVenta(
             @RequestHeader("Idempotency-Key")
             @NotBlank(message = "El header Idempotency-Key es obligatorio")
+            @Size(max = 64)
             String idempotencyKey,
 
             @Valid @RequestBody VentaRequest request,
-            @AuthenticationPrincipal Jwt principal) {
-        // Extraer el usuario autenticado (sub del JWT)
-        UUID usuarioId = UUID.fromString(principal.getSubject());
-        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey, usuarioId);
+            @AuthenticationPrincipal Jwt token
+    ) {
+        UUID usuario;
+        try {
+            usuario = UUID.fromString(token.getSubject());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new AccesoDenegadoException("TOKEN_SIN_USUARIO_VALIDO", "El token no identifica un usuario válido");
+        }
+        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey, usuario);
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 }
