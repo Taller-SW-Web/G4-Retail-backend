@@ -1,4 +1,4 @@
-name: Production Deployment and Rollback
+name: Production Deploy
 run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }}
 'on':
   push:
@@ -7,13 +7,9 @@ run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }}
   workflow_dispatch:
     inputs:
       rollback:
-        description: Restore a previously deployed release (retail-operator team required)
+        description: Restore the production tag selected in Use workflow from (retail-operator team required)
         type: boolean
         default: false
-      release_tag:
-        description: Production tag to restore; required only for rollback
-        type: string
-        required: false
 permissions:
   contents: write
   actions: read
@@ -26,7 +22,7 @@ jobs:
       technology: maven
       sonar_host_url: ${{ vars.SONAR_HOST_URL }}
       rollback: ${{ inputs.rollback || false }}
-      release_tag: ${{ inputs.release_tag || '' }}
+      release_tag: ${{ inputs.rollback && github.ref_type == 'tag' && github.ref_name || '' }}
       healthcheck_url: ${{ vars.PRODUCTION_HEALTHCHECK_URL }}
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
