@@ -20,6 +20,7 @@ jobs:
     uses: Taller-SW-Web/devsecops-templates/.github/workflows/cd-railway.yml@main
     with:
       environment: production
+      service: ${{ vars.RAILWAY_SERVICE }}
     secrets:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
