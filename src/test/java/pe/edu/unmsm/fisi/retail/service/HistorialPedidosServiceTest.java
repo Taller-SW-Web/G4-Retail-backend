@@ -6,19 +6,25 @@ import org.junit.jupiter.api.Test;
 import pe.edu.unmsm.fisi.retail.dto.DetallePedidoHistoricoResponse;
 import pe.edu.unmsm.fisi.retail.dto.PaginaPedidosResponse;
 import pe.edu.unmsm.fisi.retail.dto.PedidoResumenDto;
+import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.exception.ParametroInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidosVentasPort;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
+import pe.edu.unmsm.fisi.retail.model.PerfilTienda;
+import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
+import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -28,7 +34,10 @@ import static org.mockito.Mockito.when;
 @DisplayName("HistorialPedidosService — F6 (RF-16, RF-17)")
 class HistorialPedidosServiceTest {
 
+    private static final UUID USUARIO = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000001");
+
     private PedidosVentasPort ventas;
+    private PersonalTiendaRepository personal;
     private RegistroPedidosMostrador registro;
     private HistorialPedidosService servicio;
 
@@ -37,7 +46,9 @@ class HistorialPedidosServiceTest {
         ventas = mock(PedidosVentasPort.class);
         when(ventas.origen()).thenReturn("PRUEBA");
         registro = new RegistroPedidosMostrador();
-        servicio = new HistorialPedidosService(ventas, registro);
+        personal = mock(PersonalTiendaRepository.class);
+        conPerfil(PerfilTienda.VENDEDOR);
+        servicio = new HistorialPedidosService(ventas, registro, personal);
     }
 
     private static PedidoVentas pedido(String id, String creado, String estado, List<PedidoVentas.Historial> historial) {
@@ -47,6 +58,12 @@ class HistorialPedidosServiceTest {
                 new PedidoVentas.Envio("TIENDA", "TIENDA-MIRAFLORES"),
                 List.of(new PedidoVentas.Item("ZAP-RUN-41-BLANC", "Zapatilla Running", 2, new BigDecimal("229.95"))),
                 creado, creado, historial);
+    }
+
+    private void conPerfil(PerfilTienda perfil) {
+        when(personal.findByUsuarioIdAndActivoTrue(USUARIO)).thenReturn(Optional.of(
+                PersonalTienda.builder().usuarioId(USUARIO).tiendaId("TIENDA-MIRAFLORES")
+                        .codigoVendedor("VEN-001").perfilTienda(perfil).activo(true).build()));
     }
 
     /** Simula ventas hechas en este mostrador: quedan en el registro y Ventas las conoce. */
@@ -65,7 +82,7 @@ class HistorialPedidosServiceTest {
                 pedido("PED-2026-00003", "2026-11-05T10:00:00Z", "PAGADO", List.of()),
                 pedido("PED-2026-00002", "2026-10-20T10:00:00Z", "ANULADO", List.of()));
 
-        PaginaPedidosResponse pagina = servicio.buscar(null, "72345678", 0, 20);
+        PaginaPedidosResponse pagina = servicio.buscar(USUARIO, null, "72345678", 0, 20);
 
         assertThat(pagina.items()).extracting(PedidoResumenDto::pedidoId)
                 .containsExactly("PED-2026-00003", "PED-2026-00002", "PED-2026-00001");
@@ -80,7 +97,7 @@ class HistorialPedidosServiceTest {
         when(ventas.consultar("PED-2026-00412"))
                 .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of()));
 
-        PaginaPedidosResponse pagina = servicio.buscar("PED-2026-00412", null, 0, 20);
+        PaginaPedidosResponse pagina = servicio.buscar(USUARIO, "PED-2026-00412", null, 0, 20);
 
         assertThat(pagina.items()).hasSize(1);
         assertThat(pagina.items().get(0).fechaCreacion()).isEqualTo("2026-11-06T10:30:00-05:00");
@@ -91,7 +108,7 @@ class HistorialPedidosServiceTest {
     void codigoInexistente() {
         when(ventas.consultar("PED-2026-99999")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> servicio.buscar("PED-2026-99999", null, 0, 20))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, "PED-2026-99999", null, 0, 20))
                 .isInstanceOf(RecursoNoEncontradoException.class)
                 .extracting("codigo").isEqualTo("PEDIDO_NO_ENCONTRADO");
     }
@@ -102,14 +119,14 @@ class HistorialPedidosServiceTest {
         when(ventas.consultar("PED-2026-00412"))
                 .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of())));
 
-        assertThatThrownBy(() -> servicio.buscar("PED-2026-00412", "45678912", 0, 20))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, "PED-2026-00412", "45678912", 0, 20))
                 .isInstanceOf(RecursoNoEncontradoException.class);
     }
 
     @Test
     @DisplayName("Sin filtros responde PARAMETRO_OBLIGATORIO; un filtro vacío cuenta como ausente")
     void sinFiltros() {
-        assertThatThrownBy(() -> servicio.buscar(" ", "", 0, 20))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, " ", "", 0, 20))
                 .isInstanceOf(ParametroInvalidoException.class)
                 .extracting("codigo").isEqualTo("PARAMETRO_OBLIGATORIO");
     }
@@ -117,7 +134,7 @@ class HistorialPedidosServiceTest {
     @Test
     @DisplayName("Un documento que no es DNI ni RUC responde PARAMETRO_INVALIDO")
     void documentoInvalido() {
-        assertThatThrownBy(() -> servicio.buscar(null, "1234", 0, 20))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, null, "1234", 0, 20))
                 .isInstanceOf(ParametroInvalidoException.class)
                 .extracting("campo").isEqualTo("documentoCliente");
     }
@@ -125,9 +142,9 @@ class HistorialPedidosServiceTest {
     @Test
     @DisplayName("Paginación fuera de rango responde PARAMETRO_INVALIDO")
     void paginacionInvalida() {
-        assertThatThrownBy(() -> servicio.buscar(null, "72345678", -1, 20))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, null, "72345678", -1, 20))
                 .isInstanceOf(ParametroInvalidoException.class).extracting("campo").isEqualTo("page");
-        assertThatThrownBy(() -> servicio.buscar(null, "72345678", 0, 101))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, null, "72345678", 0, 101))
                 .isInstanceOf(ParametroInvalidoException.class).extracting("campo").isEqualTo("size");
     }
 
@@ -139,11 +156,11 @@ class HistorialPedidosServiceTest {
                 pedido("PED-2026-00002", "2026-10-02T10:00:00Z", "ENTREGADO", List.of()),
                 pedido("PED-2026-00003", "2026-10-03T10:00:00Z", "ENTREGADO", List.of()));
 
-        PaginaPedidosResponse segunda = servicio.buscar(null, "72345678", 1, 2);
+        PaginaPedidosResponse segunda = servicio.buscar(USUARIO, null, "72345678", 1, 2);
 
         assertThat(segunda.items()).extracting(PedidoResumenDto::pedidoId).containsExactly("PED-2026-00001");
         assertThat(segunda.total()).isEqualTo(3);
-        assertThat(servicio.buscar(null, "72345678", 5, 2).items()).isEmpty();
+        assertThat(servicio.buscar(USUARIO, null, "72345678", 5, 2).items()).isEmpty();
     }
 
     @Test
@@ -155,7 +172,7 @@ class HistorialPedidosServiceTest {
                         new PedidoVentas.Historial("CREADO", "2026-11-01T13:00:00Z", null),
                         new PedidoVentas.Historial("PAGADO", "2026-11-01T13:05:00Z", null)))));
 
-        DetallePedidoHistoricoResponse detalle = servicio.detalle("PED-2026-00398");
+        DetallePedidoHistoricoResponse detalle = servicio.detalle(USUARIO, "PED-2026-00398");
 
         assertThat(detalle.historialEstados()).extracting(DetallePedidoHistoricoResponse.EventoEstado::estado)
                 .containsExactly("CREADO", "PAGADO", "DESPACHADO");
@@ -172,7 +189,7 @@ class HistorialPedidosServiceTest {
         when(ventas.consultar("PED-2026-00412"))
                 .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of())));
 
-        DetallePedidoHistoricoResponse.Linea linea = servicio.detalle("PED-2026-00412").lineas().get(0);
+        DetallePedidoHistoricoResponse.Linea linea = servicio.detalle(USUARIO, "PED-2026-00412").lineas().get(0);
 
         assertThat(linea.sku()).isEqualTo("ZAP-RUN-41-BLANC");
         assertThat(linea.nombre()).isEqualTo("Zapatilla Running");
@@ -185,7 +202,7 @@ class HistorialPedidosServiceTest {
     void detalleInexistente() {
         when(ventas.consultar("PED-2026-99999")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> servicio.detalle("PED-2026-99999"))
+        assertThatThrownBy(() -> servicio.detalle(USUARIO, "PED-2026-99999"))
                 .isInstanceOf(RecursoNoEncontradoException.class);
     }
 
@@ -195,7 +212,7 @@ class HistorialPedidosServiceTest {
         when(ventas.consultar("PED-2026-00001")).thenReturn(Optional.of(
                 pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "ENTREGADO", List.of())));
 
-        assertThatThrownBy(() -> servicio.buscar(null, "72345678", 0, 20))
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, null, "72345678", 0, 20))
                 .isInstanceOf(RecursoNoEncontradoException.class);
     }
 
@@ -206,7 +223,41 @@ class HistorialPedidosServiceTest {
         registro.registrar("72345678", "VNT-20261106-00001");
         when(ventas.consultar("VNT-20261106-00001")).thenReturn(Optional.empty());
 
-        assertThat(servicio.buscar(null, "72345678", 0, 20).items())
+        assertThat(servicio.buscar(USUARIO, null, "72345678", 0, 20).items())
                 .extracting(PedidoResumenDto::pedidoId).containsExactly("PED-2026-00412");
+    }
+
+    @Test
+    @DisplayName("Sin perfil activo de tienda responde 403 en búsqueda y detalle, sin llamar a Ventas")
+    void sinPerfilActivoResponde403() {
+        when(personal.findByUsuarioIdAndActivoTrue(USUARIO)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> servicio.buscar(USUARIO, "PED-2026-00001", null, 0, 20))
+                .isInstanceOf(AccesoDenegadoException.class)
+                .extracting("codigo").isEqualTo("FORBIDDEN_USUARIO_SIN_TIENDA");
+        assertThatThrownBy(() -> servicio.detalle(USUARIO, "PED-2026-00001"))
+                .isInstanceOf(AccesoDenegadoException.class)
+                .extracting("codigo").isEqualTo("FORBIDDEN_USUARIO_SIN_TIENDA");
+        verifyNoInteractions(ventas);
+    }
+
+    @Test
+    @DisplayName("Un perfil fuera de VENDEDOR y SUPERVISOR responde 403")
+    void perfilNoPermitidoResponde403() {
+        conPerfil(PerfilTienda.CAJERO);
+
+        assertThatThrownBy(() -> servicio.detalle(USUARIO, "PED-2026-00001"))
+                .isInstanceOf(AccesoDenegadoException.class)
+                .extracting("codigo").isEqualTo("FORBIDDEN_PERFIL_NO_PERMITIDO");
+    }
+
+    @Test
+    @DisplayName("El SUPERVISOR también puede consultar")
+    void supervisorPuedeConsultar() {
+        conPerfil(PerfilTienda.SUPERVISOR);
+        when(ventas.consultar("PED-2026-00001")).thenReturn(Optional.of(
+                pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "ENTREGADO", List.of())));
+
+        assertThat(servicio.detalle(USUARIO, "PED-2026-00001").pedidoId()).isEqualTo("PED-2026-00001");
     }
 }

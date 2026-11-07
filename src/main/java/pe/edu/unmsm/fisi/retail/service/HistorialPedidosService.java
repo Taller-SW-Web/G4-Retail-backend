@@ -9,11 +9,15 @@ import pe.edu.unmsm.fisi.retail.dto.DetallePedidoHistoricoResponse.EventoEstado;
 import pe.edu.unmsm.fisi.retail.dto.DetallePedidoHistoricoResponse.Linea;
 import pe.edu.unmsm.fisi.retail.dto.PaginaPedidosResponse;
 import pe.edu.unmsm.fisi.retail.dto.PedidoResumenDto;
+import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.exception.ParametroInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidosVentasPort;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
+import pe.edu.unmsm.fisi.retail.model.PerfilTienda;
+import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
+import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -28,6 +32,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -39,6 +45,9 @@ import java.util.regex.Pattern;
  * <p>Por DNI/RUC solo se buscan las ventas registradas en este mostrador durante la ejecución actual
  * del servicio ({@link RegistroPedidosMostrador}). El histórico completo es RF-16-DOC (spec F6 §3.1),
  * pendiente del acuerdo de acceso con G5.</p>
+ *
+ * <p>Ambas consultas exigen un perfil activo de tienda {@code VENDEDOR} o {@code SUPERVISOR}
+ * (contrato §2.4 y §5.6); si no, {@code 403}.</p>
  */
 @Slf4j
 @Service
@@ -48,18 +57,23 @@ public class HistorialPedidosService {
     static final ZoneId LIMA = ZoneId.of("America/Lima");
     private static final Pattern DOCUMENTO = Pattern.compile("^(\\d{8}|\\d{11})$");
     private static final int TAMANO_MAXIMO = 100;
+    private static final Set<PerfilTienda> PERFILES_PERMITIDOS = Set.of(PerfilTienda.VENDEDOR, PerfilTienda.SUPERVISOR);
 
     private final PedidosVentasPort ventas;
     private final RegistroPedidosMostrador registro;
+    private final PersonalTiendaRepository personalTiendaRepository;
 
     /**
      * RF-16: pedidos por código o por documento, del más reciente al más antiguo. Por documento solo
      * entran las ventas de esta ejecución, con su estado actual en Ventas.
      *
+     * @param usuarioId                   {@code sub} del token
+     * @throws AccesoDenegadoException      sin perfil activo de tienda o con un perfil no permitido
      * @throws ParametroInvalidoException   sin filtros, con documento mal formado o con paginación fuera de rango
      * @throws RecursoNoEncontradoException {@code PEDIDO_NO_ENCONTRADO} si no hay ningún pedido
      */
-    public PaginaPedidosResponse buscar(String codigoPedido, String documentoCliente, int page, int size) {
+    public PaginaPedidosResponse buscar(UUID usuarioId, String codigoPedido, String documentoCliente, int page, int size) {
+        validarPerfil(usuarioId);
         String codigo = limpiar(codigoPedido);
         String documento = limpiar(documentoCliente);
 
@@ -108,9 +122,12 @@ public class HistorialPedidosService {
     /**
      * RF-17: detalle del pedido con su historial de estados en orden cronológico ascendente.
      *
+     * @param usuarioId                   {@code sub} del token
+     * @throws AccesoDenegadoException      sin perfil activo de tienda o con un perfil no permitido
      * @throws RecursoNoEncontradoException {@code PEDIDO_NO_ENCONTRADO} si Ventas no conoce el pedido
      */
-    public DetallePedidoHistoricoResponse detalle(String pedidoId) {
+    public DetallePedidoHistoricoResponse detalle(UUID usuarioId, String pedidoId) {
+        validarPerfil(usuarioId);
         PedidoVentas p = ventas.consultar(pedidoId.trim())
                 .orElseThrow(() -> new RecursoNoEncontradoException("PEDIDO_NO_ENCONTRADO",
                         "No existe el pedido " + pedidoId));
@@ -147,6 +164,17 @@ public class HistorialPedidosService {
                 enLima(p.ultimaActualizacion()),
                 lineas,
                 historial);
+    }
+
+    /** Exige perfil activo de tienda con rol de mostrador (contrato §2.4). */
+    private void validarPerfil(UUID usuarioId) {
+        PersonalTienda perfil = personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId)
+                .orElseThrow(() -> new AccesoDenegadoException("FORBIDDEN_USUARIO_SIN_TIENDA",
+                        "El usuario autenticado no tiene un perfil activo en la tienda"));
+        if (!PERFILES_PERMITIDOS.contains(perfil.getPerfilTienda())) {
+            throw new AccesoDenegadoException("FORBIDDEN_PERFIL_NO_PERMITIDO",
+                    "El perfil de tienda no puede consultar pedidos");
+        }
     }
 
     private PedidoResumenDto resumen(PedidoVentas p) {

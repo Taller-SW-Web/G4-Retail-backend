@@ -28,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class HistorialPedidosControllerTest {
 
     private static final String RUTA = "/api/v1/retail/pedidos";
+    private static final String SIN_TIENDA = "bbbbbbbb-0000-0000-0000-000000000099";
 
     @Autowired
     private MockMvc mvc;
@@ -44,6 +45,22 @@ class HistorialPedidosControllerTest {
     void sinTokenResponde401() throws Exception {
         mvc.perform(get(RUTA).param("documentoCliente", "72345678"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Un usuario sin perfil en la tienda responde 403 en la búsqueda")
+    void busquedaSinPerfilResponde403() throws Exception {
+        mvc.perform(get(RUTA).param("codigoPedido", "PED-2026-00405").with(jwt().jwt(t -> t.subject(SIN_TIENDA))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_USUARIO_SIN_TIENDA"));
+    }
+
+    @Test
+    @DisplayName("Un usuario sin perfil en la tienda responde 403 en el detalle")
+    void detalleSinPerfilResponde403() throws Exception {
+        mvc.perform(get(RUTA + "/PED-2026-00405").with(jwt().jwt(t -> t.subject(SIN_TIENDA))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_USUARIO_SIN_TIENDA"));
     }
 
     @Test
