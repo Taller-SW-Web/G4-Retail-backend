@@ -16,6 +16,7 @@ import pe.edu.unmsm.fisi.retail.dto.SaludResponse;
 @RequestMapping("/api/v1/retail")
 public class SaludController {
 
+    /** Responde siempre {@code UP} mientras el proceso atienda peticiones; no consulta la base ni otros modulos. */
     @GetMapping("/health")
     public SaludResponse estado() {
         return SaludResponse.arriba();
