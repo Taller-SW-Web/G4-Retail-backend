@@ -254,7 +254,8 @@ public class CajaService {
      *
      * <p>Es idempotente: si ya existe un cobro con la misma {@code idempotencyKey} en este turno, lo
      * devuelve con {@code reutilizado = true} y no crea otro. El cobro nace
-     * {@code PENDIENTE_CONFIRMACION}; cuando G5 responda, {@link #actualizarEstadoCobro} lo mueve.</p>
+     * {@code PENDIENTE_CONFIRMACION} salvo que quien lo registra ya conozca su estado (ver la sobrecarga con
+     * {@code estadoInicial}); {@link #actualizarEstadoCobro} lo mueve despues.</p>
      *
      * @throws ReglaNegocioException {@code MEDIO_PAGO_INVALIDO}, {@code MONTO_COBRO_INVALIDO} o
      *                               {@code MONTO_INSUFICIENTE} (efectivo recibido menor al total)
@@ -263,6 +264,17 @@ public class CajaService {
      */
     @Transactional
     public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, String terminalPos, RegistroCobroRequest peticion) {
+        return registrarCobro(usuarioId, turnoId, terminalPos, peticion, EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+    }
+
+    /**
+     * Registra el cobro con el estado que ya conoce quien lo registra. La venta de mostrador lo
+     * registra despues de que Ventas confirma el pedido, asi que lo pide {@code CONFIRMADO}; si la
+     * misma clave quedo antes pendiente, el reintento lo confirma.
+     */
+    @Transactional
+    public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, String terminalPos,
+                                             RegistroCobroRequest peticion, EstadoCobroTurno estadoInicial) {
         CajaSesion sesion = turnoAbiertoEnTerminal(usuarioId, turnoId, terminalPos);
 
         var existente = cobroTurnoRepository.findByIdempotencyKey(peticion.idempotencyKey());
@@ -280,6 +292,14 @@ public class CajaService {
             if (peticion.montoTotal() != null && cobro.getMontoTotal().compareTo(escala(peticion.montoTotal())) != 0) {
                 throw new ConflictoException("IDEMPOTENCY_CONFLICT",
                         "La llave de idempotencia ya fue utilizada con un monto diferente");
+            }
+            if (estadoInicial == EstadoCobroTurno.CONFIRMADO
+                    && cobro.getEstado() == EstadoCobroTurno.PENDIENTE_CONFIRMACION) {
+                cobro.setEstado(EstadoCobroTurno.CONFIRMADO);
+                if (peticion.pedidoId() != null) {
+                    cobro.setPedidoId(peticion.pedidoId());
+                }
+                cobroTurnoRepository.save(cobro);
             }
             return CobroTurnoResponse.desde(cobro, true);
         }
@@ -315,7 +335,7 @@ public class CajaService {
                 .montoTotal(total)
                 .montoRecibido(recibido)
                 .vuelto(vuelto)
-                .estado(EstadoCobroTurno.PENDIENTE_CONFIRMACION)
+                .estado(estadoInicial)
                 .build();
         cobroTurnoRepository.save(cobro);
         return CobroTurnoResponse.desde(cobro, false);

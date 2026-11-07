@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import pe.edu.unmsm.fisi.retail.client.VentasClient;
+import pe.edu.unmsm.fisi.retail.model.EstadoCobroTurno;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.CalculoCarritoRequest;
@@ -342,6 +343,8 @@ public class VentaService {
             BigDecimal recibido = "EFECTIVO".equals(medioPago)
                     ? peticion.pago().montoRecibidoEfectivo()
                     : totalCalculado;
+            // El cobro se registra cuando la venta ya tiene pedido confirmado, asi que nace CONFIRMADO;
+            // tambien cuando la confirmacion llega en un reintento con la misma clave.
             cajaService.registrarCobro(usuarioId, turnoUuid, peticion.terminalPos(),
                     new RegistroCobroRequest(
                             idempotencyKey,
@@ -351,7 +354,7 @@ public class VentaService {
                             pedidoId,
                             serie,
                             correlativo
-                    ));
+                    ), EstadoCobroTurno.CONFIRMADO);
         }
 
         // 11. Persistir venta en RET_VENTA para F9 (cambios y vales)

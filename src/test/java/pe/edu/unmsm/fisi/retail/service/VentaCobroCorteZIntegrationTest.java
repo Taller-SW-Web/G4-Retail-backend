@@ -83,6 +83,23 @@ class VentaCobroCorteZIntegrationTest {
     }
 
     @Test
+    @DisplayName("Una venta confirmada por Ventas deja su cobro del turno en CONFIRMADO con el pedido central")
+    void ventaConfirmadaConfirmaElCobro() throws Exception {
+        String turnoId = abrirTurno();
+
+        String pedidoId = com.jayway.jsonpath.JsonPath.read(
+                registrarVenta(conToken(VENDEDOR), "idemp-confirmado-1", venta(TERMINAL, turnoId,
+                        "{\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":100.00}", "100.00"))
+                        .andExpect(status().isCreated())
+                        .andReturn().getResponse().getContentAsString(),
+                "$.pedidoId");
+
+        CobroTurno cobro = cobroTurnoRepository.findByIdempotencyKey("idemp-confirmado-1").orElseThrow();
+        assertThat(cobro.getEstado()).isEqualTo(pe.edu.unmsm.fisi.retail.model.EstadoCobroTurno.CONFIRMADO);
+        assertThat(cobro.getPedidoId()).isEqualTo(pedidoId);
+    }
+
+    @Test
     @DisplayName("Reintentar con la misma Idempotency-Key no duplica el cobro en el Corte Z")
     void reintentoNoDuplicaElCobro() throws Exception {
         String turnoId = abrirTurno();
