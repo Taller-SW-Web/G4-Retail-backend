@@ -49,6 +49,15 @@ class TokenServicioG7Test {
     }
 
     @Test
+    @DisplayName("Sin secreto no llama a G7 y responde SEGURIDAD_NO_CONFIGURADA")
+    void sinSecretoNoLlamaAG7() {
+        assertThatThrownBy(() -> nuevo("").obtener())
+                .isInstanceOf(ServicioExternoNoDisponibleException.class)
+                .hasFieldOrPropertyWithValue("codigo", "SEGURIDAD_NO_CONFIGURADA");
+        servidor.verify();
+    }
+
+    @Test
     @DisplayName("Pide el token una vez y lo reutiliza mientras está vigente")
     void reutilizaTokenVigente() {
         servidor.expect(once(), requestTo(URL))

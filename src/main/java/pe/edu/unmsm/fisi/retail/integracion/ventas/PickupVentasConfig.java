@@ -18,8 +18,11 @@ import java.time.Duration;
  *
  * <p>{@code retail.integracion.ventas.pickup.modo}:</p>
  * <ul>
- *   <li>{@code auto} (por defecto): Ventas real si hay secreto de G7 configurado; si no, en memoria.</li>
- *   <li>{@code g5}: siempre Ventas real.</li>
+ *   <li>{@code auto} (por defecto en local y pruebas): Ventas real si hay secreto de G7 configurado;
+ *   si no, en memoria.</li>
+ *   <li>{@code g5} (por defecto en la nube, perfil {@code supabase}): siempre Ventas real. Si falta el
+ *   secreto, la bandeja responde {@code 503 SEGURIDAD_NO_CONFIGURADA}; nunca muestra pedidos de ejemplo
+ *   ni emite constancias ficticias.</li>
  *   <li>{@code memoria}: siempre los pedidos de ejemplo.</li>
  * </ul>
  */
@@ -51,6 +54,9 @@ public class PickupVentasConfig {
         fabrica.setConnectTimeout(Duration.ofMillis(timeoutMs));
         fabrica.setReadTimeout(Duration.ofMillis(timeoutMs));
 
+        if (!tokenServicio.configurado()) {
+            log.error("Pickup (F7) en modo {} sin G7_CLIENT_SECRET: la bandeja respondera 503 hasta configurarlo", modo);
+        }
         log.info("Pickup (F7) conectado a Ventas (G5): url={} timeoutMs={}", urlVentas, timeoutMs);
         return new PickupVentasHttp(RestClient.builder().baseUrl(urlVentas).requestFactory(fabrica).build(), tokenServicio);
     }

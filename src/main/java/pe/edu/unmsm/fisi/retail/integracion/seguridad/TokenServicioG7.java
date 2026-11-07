@@ -72,9 +72,14 @@ public class TokenServicioG7 {
     /**
      * Devuelve un token vigente, pidiendo uno nuevo a G7 solo si el anterior está por vencer.
      *
-     * @throws ServicioExternoNoDisponibleException si G7 no responde o rechaza las credenciales
+     * @throws ServicioExternoNoDisponibleException si falta el secreto, o si G7 no responde o rechaza las
+     *                                              credenciales
      */
     public synchronized String obtener() {
+        if (!configurado()) {
+            throw new ServicioExternoNoDisponibleException("SEGURIDAD_NO_CONFIGURADA",
+                    "Falta configurar G7_CLIENT_SECRET: Retail no puede pedir el token de servicio a Seguridad");
+        }
         Instant ahora = reloj.instant();
         if (tokenActual != null && ahora.isBefore(venceEn.minus(MARGEN_RENOVACION))) {
             return tokenActual;
