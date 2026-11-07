@@ -10,6 +10,7 @@ import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -544,5 +545,23 @@ class VentaServiceTest {
             assertThat(respuesta.estadoPedido()).isEqualTo("PAGADO");
         }
     }
-}
 
+    @Nested
+    @DisplayName("Registro para la consulta histórica (F6)")
+    class RegistroConsultaHistorica {
+
+        @Test
+        @DisplayName("La venta con documento queda registrada para buscarla por DNI")
+        void registraElPedidoPorDocumento() {
+            RegistroPedidosMostrador registro = new RegistroPedidosMostrador();
+            VentaService servicioConRegistro = new VentaService(null, registro);
+            servicioConRegistro.abrirTurnoMock(TURNO_ABIERTO);
+
+            VentaResponse respuesta = servicioConRegistro.registrarVenta(
+                    request(List.of(item("SKU-001", 1, "118.00")), pagoEfectivo("200.00"), boleta("12345678")),
+                    UUID.randomUUID().toString());
+
+            assertThat(registro.pedidosDe("12345678")).containsExactly(respuesta.pedidoId());
+        }
+    }
+}

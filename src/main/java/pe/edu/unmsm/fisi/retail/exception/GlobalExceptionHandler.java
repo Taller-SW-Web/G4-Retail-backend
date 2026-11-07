@@ -97,6 +97,15 @@ public class GlobalExceptionHandler {
                 "El parametro " + ex.getName() + " no tiene el tipo esperado", peticion, errores);
     }
 
+    /** Parametro de consulta ausente o mal formado validado en el servicio (seccion 2.6). */
+    @ExceptionHandler(ParametroInvalidoException.class)
+    public ProblemDetail manejarParametroInvalido(ParametroInvalidoException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getCampo(), ex.getMessage()));
+        String titulo = "PARAMETRO_OBLIGATORIO".equals(ex.getCodigo())
+                ? "Falta un parametro obligatorio" : "Parametros invalidos";
+        return construir(HttpStatus.BAD_REQUEST, ex.getCodigo(), titulo, ex.getMessage(), peticion, errores);
+    }
+
     /**
      * Ruta inexistente. Spring la senala con {@link NoResourceFoundException}; sin este manejador
      * caeria en el de {@code Exception} y responderia {@code 500}, haciendo imposible que el cliente
