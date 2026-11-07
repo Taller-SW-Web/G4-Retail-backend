@@ -81,6 +81,25 @@ public final class ValidadorDocumento {
         return new DocumentoValidado(tipo, numero);
     }
 
+    /**
+     * Valida un documento para la busqueda en el padron ({@code GET /api/v1/retail/clientes}).
+     *
+     * <p>Segun el contrato (seccion 5.3), la busqueda solo admite documentos de persona natural:
+     * {@code DNI}, {@code CE} o {@code PASAPORTE}. El RUC identifica a una persona juridica, no se
+     * consulta en el padron y se captura con la razon social para la factura, por eso se rechaza por
+     * tipo antes de revisar el numero, aunque ese RUC se haya registrado con el alta.</p>
+     *
+     * @throws DatoInvalidoException si el tipo es {@code RUC}, no se reconoce, o el numero no cumple el formato
+     */
+    public static DocumentoValidado validarParaBusqueda(String tipoDocumento, String numeroDocumento) {
+        if (resolverTipo(tipoDocumento) == TipoDocumento.RUC) {
+            throw new DatoInvalidoException("tipoDocumento",
+                    "La busqueda de clientes admite DNI, CE o PASAPORTE. El RUC no se consulta en el "
+                            + "padron: se captura con la razon social para la factura");
+        }
+        return validar(tipoDocumento, numeroDocumento);
+    }
+
     private static TipoDocumento resolverTipo(String tipoDocumento) {
         if (tipoDocumento == null || tipoDocumento.isBlank()) {
             throw new DatoInvalidoException("tipoDocumento", "El campo tipoDocumento es obligatorio");

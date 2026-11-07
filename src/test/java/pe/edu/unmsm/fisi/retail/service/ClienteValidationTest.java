@@ -184,12 +184,32 @@ class ClienteValidationTest {
         }
 
         @ParameterizedTest(name = "alta de {0} {1} y busqueda posterior")
-        @CsvSource({"DNI, 45678912", "RUC, 20100047218", "CE, 000987654", "PASAPORTE, P1234567"})
+        @CsvSource({"DNI, 45678912", "CE, 000987654", "PASAPORTE, P1234567"})
         void altaValidaQuedaDisponible(String tipo, String numero) {
             ClienteResponse registrado = servicio.registrarAltaRapida(alta(tipo, numero));
 
             assertThat(registrado.tipoDocumento()).isEqualTo(tipo);
             assertThat(servicio.buscarPorDocumento(tipo, numero)).isEqualTo(registrado);
+        }
+
+        @Test
+        @DisplayName("El alta admite RUC, pero la busqueda lo rechaza aunque este registrado (contrato 5.3)")
+        void rucSeRegistraPeroNoSeBusca() {
+            ClienteResponse registrado = servicio.registrarAltaRapida(alta("RUC", "20100047218"));
+            assertThat(registrado.tipoDocumento()).isEqualTo("RUC");
+
+            assertThatThrownBy(() -> servicio.buscarPorDocumento("RUC", "20100047218"))
+                    .isInstanceOf(DatoInvalidoException.class)
+                    .extracting("campo").isEqualTo("tipoDocumento");
+        }
+
+        @ParameterizedTest(name = "busqueda con tipo \"{0}\" se rechaza por tipo, sin mirar el numero")
+        @ValueSource(strings = {"RUC", "ruc", " RUC "})
+        void busquedaRechazaRucPorTipo(String tipo) {
+            // Incluso un RUC con formato invalido se rechaza primero por el tipo.
+            assertThatThrownBy(() -> servicio.buscarPorDocumento(tipo, "30123456789"))
+                    .isInstanceOf(DatoInvalidoException.class)
+                    .extracting("campo").isEqualTo("tipoDocumento");
         }
 
         @Test
@@ -235,7 +255,7 @@ class ClienteValidationTest {
         }
 
         @ParameterizedTest(name = "GET con {0} \"{1}\" responde 400 DATO_INVALIDO")
-        @CsvSource({"DNI, 1234567", "DNI, 1234567A", "RUC, 30123456789", "CE, 12345678", "PASAPORTE, A1234"})
+        @CsvSource({"DNI, 1234567", "DNI, 1234567A", "CE, 12345678", "PASAPORTE, A1234"})
         void busquedaInvalidaResponde400(String tipo, String numero) throws Exception {
             mockMvc.perform(get("/api/v1/retail/clientes")
                             .param("tipoDocumento", tipo)
@@ -243,6 +263,38 @@ class ClienteValidationTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("DATO_INVALIDO"))
                     .andExpect(jsonPath("$.errores[0].campo").value("numeroDocumento"));
+        }
+
+        @Test
+        @DisplayName("POST de RUC 20100047218 responde 201 y GET con ese RUC responde 400 DATO_INVALIDO")
+        void rucRegistradoNoSePuedeBuscar() throws Exception {
+            String cuerpo = """
+                    {"tipoDocumento":"RUC","numeroDocumento":"20100047218",
+                     "nombres":"Comercial","apellidos":"Andina"}
+                    """;
+            mockMvc.perform(post("/api/v1/retail/clientes")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(cuerpo))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.tipoDocumento").value("RUC"));
+
+            mockMvc.perform(get("/api/v1/retail/clientes")
+                            .param("tipoDocumento", "RUC")
+                            .param("numeroDocumento", "20100047218"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("DATO_INVALIDO"))
+                    .andExpect(jsonPath("$.errores[0].campo").value("tipoDocumento"));
+        }
+
+        @ParameterizedTest(name = "GET con RUC \"{0}\" responde 400 DATO_INVALIDO sobre tipoDocumento")
+        @ValueSource(strings = {"20100047218", "10456789123", "30123456789"})
+        void busquedaConRucResponde400(String numero) throws Exception {
+            mockMvc.perform(get("/api/v1/retail/clientes")
+                            .param("tipoDocumento", "RUC")
+                            .param("numeroDocumento", numero))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("DATO_INVALIDO"))
+                    .andExpect(jsonPath("$.errores[0].campo").value("tipoDocumento"));
         }
 
         @Test

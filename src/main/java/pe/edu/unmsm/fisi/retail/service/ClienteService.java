@@ -17,10 +17,10 @@ public interface ClienteService {
     /**
      * Busca un cliente por su documento en el padron de la tienda.
      *
-     * @param tipoDocumento   tipo de documento: {@code DNI}, {@code RUC}, {@code CE} o {@code PASAPORTE}
+     * @param tipoDocumento   tipo de documento: {@code DNI}, {@code CE} o {@code PASAPORTE} (el RUC no se busca)
      * @param numeroDocumento numero del documento
      * @return el cliente identificado
-     * @throws DatoInvalidoException        si el documento no cumple su formato oficial (RF-09)
+     * @throws DatoInvalidoException        si el tipo es RUC o el documento no cumple su formato oficial (RF-09)
      * @throws RecursoNoEncontradoException si el documento no figura en el padron
      */
     ClienteResponse buscarPorDocumento(String tipoDocumento, String numeroDocumento);

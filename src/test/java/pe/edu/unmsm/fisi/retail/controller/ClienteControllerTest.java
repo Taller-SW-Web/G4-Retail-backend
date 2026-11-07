@@ -121,17 +121,18 @@ class ClienteControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/retail/clientes responde 400 DATO_INVALIDO cuando el RUC tiene prefijo no autorizado")
-    void buscarPorDocumentoInvalidoResponde400() throws Exception {
-        given(clienteService.buscarPorDocumento("RUC", "30123456789"))
-                .willThrow(new DatoInvalidoException("numeroDocumento",
-                        "El RUC debe tener exactamente 11 digitos numericos y empezar con 10 o 20"));
+    @DisplayName("GET /api/v1/retail/clientes responde 400 DATO_INVALIDO cuando se busca por RUC")
+    void buscarPorRucResponde400() throws Exception {
+        given(clienteService.buscarPorDocumento("RUC", "20100047218"))
+                .willThrow(new DatoInvalidoException("tipoDocumento",
+                        "La busqueda de clientes admite DNI, CE o PASAPORTE"));
 
         mockMvc.perform(get("/api/v1/retail/clientes")
                         .param("tipoDocumento", "RUC")
-                        .param("numeroDocumento", "30123456789"))
+                        .param("numeroDocumento", "20100047218"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("DATO_INVALIDO"));
+                .andExpect(jsonPath("$.code").value("DATO_INVALIDO"))
+                .andExpect(jsonPath("$.errores[0].campo").value("tipoDocumento"));
     }
 
     @Test

@@ -44,7 +44,7 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     public ClienteResponse buscarPorDocumento(String tipoDocumento, String numeroDocumento) {
-        DocumentoValidado documento = ValidadorDocumento.validar(tipoDocumento, numeroDocumento);
+        DocumentoValidado documento = ValidadorDocumento.validarParaBusqueda(tipoDocumento, numeroDocumento);
         ClienteResponse cliente = padron.get(clave(documento));
         if (cliente == null) {
             throw new RecursoNoEncontradoException("CLIENTE_NO_ENCONTRADO",

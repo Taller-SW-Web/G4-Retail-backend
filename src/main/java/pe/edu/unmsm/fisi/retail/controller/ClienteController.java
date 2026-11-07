@@ -28,6 +28,10 @@ import pe.edu.unmsm.fisi.retail.service.ClienteService;
  * {@code ^(10|20)\d{9}$}, CE de 9 a 12 y pasaporte de 6 a 16 caracteres alfanumericos. Un formato
  * invalido responde {@code 400 DATO_INVALIDO} (codigo homologado con Ventas G5).</p>
  *
+ * <p>La busqueda ({@code GET}) solo admite {@code DNI}, {@code CE} o {@code PASAPORTE}, como fija el
+ * contrato (seccion 5.3): un {@code RUC} responde {@code 400 DATO_INVALIDO} aunque este registrado. El
+ * alta ({@code POST}) si admite RUC.</p>
+ *
  * <p><strong>Limite estricto:</strong> solo maneja datos de identificacion (documento, nombre,
  * apellido). NO procesa ventas ni cobra dinero (eso corresponde a F4 y F5).</p>
  */
