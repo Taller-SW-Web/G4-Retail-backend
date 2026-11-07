@@ -230,7 +230,7 @@ public class CajaService {
      *                               turno, mas los codigos de {@link #validarTurnoParaCobro}
      */
     @Transactional
-    public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, RegistroCobroRequest peticion) {
+    public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, String terminalPos, RegistroCobroRequest peticion) {
         CajaSesion sesion = (usuarioId != null && usuarioId.equals(turnoId))
                 ? validarTurnoAbierto(turnoId)
                 : turnoAbierto(usuarioId, turnoId);

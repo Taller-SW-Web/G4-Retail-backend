@@ -136,7 +136,7 @@ public class VentaService {
      * @return respuesta con los datos de la venta registrada y el comprobante emitido
      * @throws ReglaNegocioException si alguna validacion de negocio falla
      */
-    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
+    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey, UUID usuarioId) {
         // 1. Validar idempotencia: si la llave ya fue procesada, devolver la misma respuesta
         if (idempotencyKey != null && cacheIdempotencia.containsKey(idempotencyKey)) {
             log.info("Idempotencia activada para llave={}", idempotencyKey);

@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
@@ -61,9 +63,11 @@ public class VentaController {
             @NotBlank(message = "El header Idempotency-Key es obligatorio")
             String idempotencyKey,
 
-            @Valid @RequestBody VentaRequest request
-    ) {
-        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey);
+            @Valid @RequestBody VentaRequest request,
+            @AuthenticationPrincipal Jwt principal) {
+        // Extraer el usuario autenticado (sub del JWT)
+        UUID usuarioId = UUID.fromString(principal.getSubject());
+        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey, usuarioId);
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 }
