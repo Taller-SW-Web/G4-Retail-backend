@@ -40,8 +40,8 @@ public class PickupController {
 
     /** Pedidos pickup de la tienda pendientes de entrega (RF-18). */
     @GetMapping("/pendientes")
-    public List<PedidoPickupResponse> pendientes() {
-        return pickupService.pendientes();
+    public List<PedidoPickupResponse> pendientes(@AuthenticationPrincipal Jwt token) {
+        return pickupService.pendientes(usuarioDelToken(token));
     }
 
     /** Registra la entrega física y devuelve la constancia (RF-19). */

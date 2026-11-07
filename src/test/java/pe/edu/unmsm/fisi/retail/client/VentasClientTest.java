@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -80,6 +82,58 @@ class VentasClientTest {
         assertThat(resultado).isPresent();
         assertThat(resultado.get().pedidoId()).isEqualTo("PED-2026-00091");
         assertThat(resultado.get().estado()).isEqualTo("PAGADO");
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Envía el contrato RETAIL con el comprobante separado del voucher")
+    void crearPedidoRetailConComprobante() throws Exception {
+        String clave = "a2a147cb-65fa-4cb4-88e7-2def99a80c36";
+        String payload = """
+                {
+                  "canal": "RETAIL",
+                  "contacto": {
+                    "clienteId": "11111111-1111-4111-8111-111111111111",
+                    "nombreCompleto": "Cliente Prueba",
+                    "tipoDocumento": "DNI",
+                    "numeroDocumento": "12345678",
+                    "email": "cliente@example.com",
+                    "telefono": "+51999999999"
+                  },
+                  "items": [{
+                    "productoId": "PROD-001",
+                    "sku": "SKU-001",
+                    "descripcion": "Prenda",
+                    "cantidad": 1,
+                    "precioUnitario": 199.90
+                  }],
+                  "envio": {"tiendaId": "TIENDA-MIRAFLORES"},
+                  "pago": {
+                    "metodoPago": "TARJETA_POS",
+                    "moneda": "PEN",
+                    "subtotal": 199.90,
+                    "descuentoCupon": 0.00,
+                    "costoEnvio": 0.00,
+                    "total": 199.90,
+                    "referenciaOperacion": "VOU-987654",
+                    "comprobanteReferencia": "B001-00045678"
+                  }
+                }
+                """;
+        VentasCrearPedidoRequest pedido = mapper.readValue(payload, VentasCrearPedidoRequest.class);
+        mockServer.expect(requestTo("https://g5-servicio-ventas.onrender.com/api/v1/pedidos"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", clave))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(content().json(payload, JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {"pedidoId":"PED-2026-00091","estado":"ENTREGADO","total":199.90,"moneda":"PEN"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(ventasClient.crearPedido(pedido, clave)).hasValueSatisfying(respuesta -> {
+            assertThat(respuesta.pedidoId()).isEqualTo("PED-2026-00091");
+            assertThat(respuesta.estado()).isEqualTo("ENTREGADO");
+        });
         mockServer.verify();
     }
 

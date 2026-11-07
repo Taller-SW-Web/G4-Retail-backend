@@ -25,6 +25,7 @@ import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
 import pe.edu.unmsm.fisi.retail.model.TipoMovimientoCaja;
 import pe.edu.unmsm.fisi.retail.repository.CajaMovimientoRepository;
 import pe.edu.unmsm.fisi.retail.repository.CajaSesionRepository;
+import pe.edu.unmsm.fisi.retail.repository.CobroTurnoRepository;
 import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
 
 import java.math.BigDecimal;
@@ -66,6 +67,9 @@ class CajaServiceTest {
 
     @Mock
     private CajaMovimientoRepository cajaMovimientoRepository;
+
+    @Mock
+    private CobroTurnoRepository cobroTurnoRepository;
 
     @Mock
     private PersonalTiendaRepository personalTiendaRepository;

@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import pe.edu.unmsm.fisi.retail.dto.ClienteAltaRapidaRequest;
 import pe.edu.unmsm.fisi.retail.dto.ClienteResponse;
 import pe.edu.unmsm.fisi.retail.exception.ConflictoException;
+import pe.edu.unmsm.fisi.retail.exception.DatoInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.service.ClienteService;
 
@@ -102,8 +103,12 @@ class ClienteControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/retail/clientes responde 400 cuando el documento no tiene 8 digitos")
+    @DisplayName("POST /api/v1/retail/clientes responde 400 DATO_INVALIDO cuando el documento no tiene 8 digitos")
     void registrarAltaRapidaConDocumentoInvalidoResponde400() throws Exception {
+        given(clienteService.registrarAltaRapida(any()))
+                .willThrow(new DatoInvalidoException("numeroDocumento",
+                        "El DNI debe tener exactamente 8 digitos numericos"));
+
         var request = new ClienteAltaRapidaRequest(
                 "RETAIL", "DNI", "1234567", "Pedro", "Soto", "pedro@correo.com", "987654321");
 
@@ -111,7 +116,37 @@ class ClienteControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("PARAMETRO_INVALIDO"));
+                .andExpect(jsonPath("$.code").value("DATO_INVALIDO"))
+                .andExpect(jsonPath("$.errores[0].campo").value("numeroDocumento"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/retail/clientes responde 400 DATO_INVALIDO cuando se busca por RUC")
+    void buscarPorRucResponde400() throws Exception {
+        given(clienteService.buscarPorDocumento("RUC", "20100047218"))
+                .willThrow(new DatoInvalidoException("tipoDocumento",
+                        "La busqueda de clientes admite DNI, CE o PASAPORTE"));
+
+        mockMvc.perform(get("/api/v1/retail/clientes")
+                        .param("tipoDocumento", "RUC")
+                        .param("numeroDocumento", "20100047218"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DATO_INVALIDO"))
+                .andExpect(jsonPath("$.errores[0].campo").value("tipoDocumento"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/retail/clientes responde 400 PARAMETRO_INVALIDO cuando el email no tiene formato valido")
+    void registrarAltaRapidaConEmailInvalidoResponde400() throws Exception {
+        var request = new ClienteAltaRapidaRequest(
+                "RETAIL", "DNI", "45678912", "Pedro", "Soto", "pedro@correo", "987654321");
+
+        mockMvc.perform(post("/api/v1/retail/clientes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PARAMETRO_INVALIDO"))
+                .andExpect(jsonPath("$.errores[0].campo").value("email"));
 
         verify(clienteService, never()).registrarAltaRapida(any());
     }

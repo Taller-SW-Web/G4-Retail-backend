@@ -4,10 +4,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -25,7 +29,6 @@ import java.util.UUID;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
     private static final String BASE_TIPO = "https://retail.g4/problemas/";
     private static final String ENCABEZADO_CORRELACION = "X-Correlation-Id";
 
@@ -58,6 +61,17 @@ public class GlobalExceptionHandler {
                 ex.getMessage(), peticion, List.of());
     }
 
+    /**
+     * Documento de identidad con formato invalido (F3, RF-09): {@code 400 DATO_INVALIDO}, codigo
+     * homologado con Ventas (G5). El campo rechazado viaja en {@code errores[]}.
+     */
+    @ExceptionHandler(DatoInvalidoException.class)
+    public ProblemDetail manejarDatoInvalido(DatoInvalidoException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getCampo(), ex.getMessage()));
+        return construir(HttpStatus.BAD_REQUEST, DatoInvalidoException.CODIGO, "Dato invalido",
+                ex.getMessage(), peticion, errores);
+    }
+
     /** Falla de Bean Validation sobre un cuerpo {@code @Valid}. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail manejarValidacion(MethodArgumentNotValidException ex, HttpServletRequest peticion) {
@@ -66,6 +80,48 @@ public class GlobalExceptionHandler {
                 .toList();
         return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
                 "Revise los campos indicados en errores[]", peticion, errores);
+    }
+
+    /** Cabecera obligatoria ausente, por ejemplo {@code Idempotency-Key} (seccion 2.3 del contrato). */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ProblemDetail manejarCabeceraAusente(MissingRequestHeaderException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getHeaderName(), "Es obligatorio"));
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_OBLIGATORIO", "Falta un parametro obligatorio",
+                "Falta la cabecera " + ex.getHeaderName(), peticion, errores);
+    }
+
+    /** Cuerpo ilegible: JSON mal formado o un valor fuera de una enumeracion, como un motivo inexistente. */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail manejarCuerpoIlegible(HttpMessageNotReadableException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
+                "El cuerpo de la peticion no es valido o tiene un valor no permitido", peticion, List.of());
+    }
+
+    /** Restriccion incumplida en un parametro de ruta o de consulta, validado por Spring. */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ProblemDetail manejarParametroRechazado(HandlerMethodValidationException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = ex.getParameterValidationResults().stream()
+                .flatMap(resultado -> resultado.getResolvableErrors().stream()
+                        .map(error -> new ErrorCampo(resultado.getMethodParameter().getParameterName(),
+                                error.getDefaultMessage())))
+                .toList();
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
+                "Revise los campos indicados en errores[]", peticion, errores);
+    }
+
+    /** La misma restriccion, cuando el controlador usa {@code @Validated}. */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail manejarRestriccion(ConstraintViolationException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = ex.getConstraintViolations().stream()
+                .map(v -> new ErrorCampo(ultimoTramo(v.getPropertyPath().toString()), v.getMessage()))
+                .toList();
+        return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
+                "Revise los campos indicados en errores[]", peticion, errores);
+    }
+
+    private static String ultimoTramo(String ruta) {
+        int punto = ruta.lastIndexOf('.');
+        return punto < 0 ? ruta : ruta.substring(punto + 1);
     }
 
     /** Parametro de query obligatorio ausente (seccion 2.6 del contrato). */
@@ -86,6 +142,15 @@ public class GlobalExceptionHandler {
                 "El parametro " + ex.getName() + " no tiene el tipo esperado", peticion, errores);
     }
 
+    /** Parametro de consulta ausente o mal formado validado en el servicio (seccion 2.6). */
+    @ExceptionHandler(ParametroInvalidoException.class)
+    public ProblemDetail manejarParametroInvalido(ParametroInvalidoException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getCampo(), ex.getMessage()));
+        String titulo = "PARAMETRO_OBLIGATORIO".equals(ex.getCodigo())
+                ? "Falta un parametro obligatorio" : "Parametros invalidos";
+        return construir(HttpStatus.BAD_REQUEST, ex.getCodigo(), titulo, ex.getMessage(), peticion, errores);
+    }
+
     /**
      * Ruta inexistente. Spring la senala con {@link NoResourceFoundException}; sin este manejador
      * caeria en el de {@code Exception} y responderia {@code 500}, haciendo imposible que el cliente
@@ -95,6 +160,12 @@ public class GlobalExceptionHandler {
     public ProblemDetail manejarRutaInexistente(NoResourceFoundException ex, HttpServletRequest peticion) {
         return construir(HttpStatus.NOT_FOUND, "RUTA_NO_ENCONTRADA", "Recurso no encontrado",
                 "La ruta solicitada no existe en este servicio", peticion, List.of());
+    }
+
+    @ExceptionHandler(ServicioExternoNoDisponibleException.class)
+    public ProblemDetail manejarServicioExterno(ServicioExternoNoDisponibleException ex, HttpServletRequest peticion) {
+        return construir(HttpStatus.SERVICE_UNAVAILABLE, ex.getCodigo(), "Servicio externo no disponible",
+                ex.getMessage(), peticion, List.of());
     }
 
     /** Red de seguridad: nada sale del backend sin el formato canonico. */

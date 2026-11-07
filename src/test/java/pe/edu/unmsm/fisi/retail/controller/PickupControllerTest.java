@@ -21,12 +21,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Endpoints de retiro en tienda (F7): RF-18 y RF-19.
  *
  * <p>Criterios de aceptación verificados: sin token no se entrega nada; la bandeja lista los pedidos
- * pendientes; una entrega válida responde {@code 200 ENTREGADO}; un DNI que no tiene 8 dígitos
- * responde {@code 400}; un pedido en camino o ya entregado responde {@code 409}; un código de retiro
- * incorrecto responde {@code 422}; y un pedido inexistente responde {@code 404}. Las rutas son las
- * canónicas del contrato (§5.7).</p>
+ * pendientes de la tienda; el titular recoge con su DNI; un tercero solo recoge con carta poder;
+ * un DNI que no tiene 8 dígitos responde {@code 400}; un pedido en camino responde {@code 409}; un
+ * pedido que no está en la bandeja responde {@code 404}. Las rutas son las canónicas del contrato
+ * (§5.7).</p>
  *
- * <p>El servicio guarda las entregas en memoria, así que cada prueba arranca con un contexto limpio.</p>
+ * <p>Sin secreto de G7 el modo {@code auto} usa los pedidos de ejemplo en memoria (nunca llama a Ventas
+ * real). No se fija la propiedad aqui para compartir el contexto de Spring con las demas pruebas: un
+ * contexto propio, al cerrarse, borraria las tablas de la base H2 compartida. Cada prueba arranca con un
+ * contexto limpio porque las entregas se guardan en memoria.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -35,8 +38,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PickupControllerTest {
 
     private static final String VENDEDOR = "bbbbbbbb-0000-0000-0000-000000000001";
+    private static final String SIN_TIENDA = "bbbbbbbb-0000-0000-0000-000000000099";
     private static final String ENTREGA_TITULAR =
-            "{\"dniRecoge\":\"45678912\",\"nombreRecoge\":\"María González\",\"esTerceroAutorizado\":false,\"codigoRetiro\":\"A7K2Q9\"}";
+            "{\"dniRecoge\":\"45678912\",\"nombreRecoge\":\"María González\",\"esTerceroAutorizado\":false}";
 
     @Autowired
     private MockMvc mvc;
@@ -58,8 +62,16 @@ class PickupControllerTest {
     }
 
     @Test
-    @DisplayName("Entregar un pedido listo responde 200 con la constancia y lo retira de la bandeja")
-    void entregaValidaResponde200() throws Exception {
+    @DisplayName("Un usuario sin perfil en la tienda responde 403")
+    void usuarioSinTiendaResponde403() throws Exception {
+        mvc.perform(get("/api/v1/retail/pickup/pendientes").with(jwt().jwt(t -> t.subject(SIN_TIENDA))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_USUARIO_SIN_TIENDA"));
+    }
+
+    @Test
+    @DisplayName("El titular recoge con su DNI: 200 con la constancia y sale de la bandeja")
+    void entregaAlTitularResponde200() throws Exception {
         mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
                         .contentType(MediaType.APPLICATION_JSON).content(ENTREGA_TITULAR))
                 .andExpect(status().isOk())
@@ -71,11 +83,54 @@ class PickupControllerTest {
     }
 
     @Test
+    @DisplayName("Si el DNI no es el del titular responde 422 y el pedido sigue en la bandeja")
+    void dniDistintoAlTitularResponde422() throws Exception {
+        mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dniRecoge\":\"11112222\",\"nombreRecoge\":\"María González\",\"esTerceroAutorizado\":false}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("DNI_NO_COINCIDE_CON_TITULAR"));
+
+        mvc.perform(get("/api/v1/retail/pickup/pendientes").with(conToken()))
+                .andExpect(jsonPath("$.length()").value(5));
+    }
+
+    @Test
+    @DisplayName("Un tercero sin carta poder verificada responde 422")
+    void terceroSinCartaPoderResponde422() throws Exception {
+        mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dniRecoge\":\"70001111\",\"nombreRecoge\":\"Pedro Apoderado\",\"esTerceroAutorizado\":true}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("CARTA_PODER_REQUERIDA"));
+    }
+
+    @Test
+    @DisplayName("Un tercero con carta poder verificada recoge: 200")
+    void terceroConCartaPoderResponde200() throws Exception {
+        mvc.perform(post("/api/v1/retail/pickup/PED-2026-08914/entrega").with(conToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dniRecoge\":\"70001111\",\"nombreRecoge\":\"Pedro Apoderado\",\"esTerceroAutorizado\":true,\"cartaPoderVerificada\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("ENTREGADO"));
+    }
+
+    @Test
     @DisplayName("Un DNI que no tiene 8 dígitos responde 400")
     void dniInvalidoResponde400() throws Exception {
         mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"dniRecoge\":\"1234\",\"nombreRecoge\":\"Tercero\",\"esTerceroAutorizado\":true,\"codigoRetiro\":\"A7K2Q9\"}"))
+                        .content("{\"dniRecoge\":\"1234\",\"nombreRecoge\":\"Tercero\",\"esTerceroAutorizado\":true,\"cartaPoderVerificada\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PARAMETRO_INVALIDO"));
+    }
+
+    @Test
+    @DisplayName("Un código de retiro mal formado responde 400")
+    void codigoRetiroMalFormadoResponde400() throws Exception {
+        mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dniRecoge\":\"45678912\",\"nombreRecoge\":\"María González\",\"esTerceroAutorizado\":false,\"codigoRetiro\":\"abc\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("PARAMETRO_INVALIDO"));
     }
@@ -85,21 +140,22 @@ class PickupControllerTest {
     void pedidoEnCaminoResponde409() throws Exception {
         mvc.perform(post("/api/v1/retail/pickup/PED-2026-08932/entrega").with(conToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"dniRecoge\":\"48765432\",\"nombreRecoge\":\"Lucero Vargas Paz\",\"esTerceroAutorizado\":false,\"codigoRetiro\":\"A7K2Q9\"}"))
+                        .content("{\"dniRecoge\":\"48765432\",\"nombreRecoge\":\"Lucero Vargas Paz\",\"esTerceroAutorizado\":false}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PEDIDO_NO_LISTO_PARA_RECOJO"));
     }
 
     @Test
-    @DisplayName("Entregar dos veces el mismo pedido responde 409")
-    void entregaDobleResponde409() throws Exception {
+    @DisplayName("Un pedido ya entregado ya no figura en la bandeja: 404")
+    void entregaDobleResponde404() throws Exception {
         mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
                         .contentType(MediaType.APPLICATION_JSON).content(ENTREGA_TITULAR))
                 .andExpect(status().isOk());
 
         mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
                         .contentType(MediaType.APPLICATION_JSON).content(ENTREGA_TITULAR))
-                .andExpect(status().isConflict());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PEDIDO_NO_ENCONTRADO"));
     }
 
     @Test
@@ -109,29 +165,6 @@ class PickupControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content(ENTREGA_TITULAR))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PEDIDO_NO_ENCONTRADO"));
-    }
-
-    @Test
-    @DisplayName("Un código de retiro que no corresponde al pedido responde 422 y no lo entrega")
-    void codigoRetiroIncorrectoResponde422() throws Exception {
-        mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"dniRecoge\":\"45678912\",\"nombreRecoge\":\"María González\",\"esTerceroAutorizado\":false,\"codigoRetiro\":\"ZZZZZZ\"}"))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.code").value("CODIGO_RETIRO_INVALIDO"));
-
-        mvc.perform(get("/api/v1/retail/pickup/pendientes").with(conToken()))
-                .andExpect(jsonPath("$.length()").value(5));
-    }
-
-    @Test
-    @DisplayName("Sin código de retiro responde 400")
-    void sinCodigoRetiroResponde400() throws Exception {
-        mvc.perform(post("/api/v1/retail/pickup/PED-2026-08910/entrega").with(conToken())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"dniRecoge\":\"45678912\",\"nombreRecoge\":\"María González\",\"esTerceroAutorizado\":false}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("PARAMETRO_INVALIDO"));
     }
 
     private static RequestPostProcessor conToken() {
