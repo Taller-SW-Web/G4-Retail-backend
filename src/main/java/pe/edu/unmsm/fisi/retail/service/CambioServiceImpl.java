@@ -156,6 +156,7 @@ public class CambioServiceImpl implements CambioService {
 
         SolicitudCambio solicitud = solicitudCambioRepository.save(SolicitudCambio.builder()
                 .cajaSesionId(turno.getIdSesion())
+                .tiendaId(vendedor.getTiendaId())
                 .ventaId(boleta.ventaId())
                 .vendedorId(usuarioId)
                 .boletaNumero(boleta.numero())
@@ -181,6 +182,7 @@ public class CambioServiceImpl implements CambioService {
                 .clienteId(peticion.clienteId())
                 .tiendaId(vendedor.getTiendaId())
                 .monto(monto)
+                .saldoDisponible(monto)
                 .fechaEmision(ahora)
                 .fechaVencimiento(ahora.plusDays(vigenciaValeDias))
                 .estado(EstadoVale.EMITIDO)

@@ -49,6 +49,10 @@ public class SolicitudCambio {
     @Column(name = "caja_sesion_id", nullable = false)
     private UUID cajaSesionId;
 
+    /** Tienda del vendedor que atendio el cambio, para consultar por tienda. */
+    @Column(name = "tienda_id", columnDefinition = "text")
+    private String tiendaId;
+
     @Column(name = "venta_id")
     private UUID ventaId;
 

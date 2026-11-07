@@ -10,9 +10,15 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.unmsm.fisi.retail.model.SolicitudCambio;
+import pe.edu.unmsm.fisi.retail.model.ValeCompra;
+import pe.edu.unmsm.fisi.retail.repository.SolicitudCambioRepository;
+import pe.edu.unmsm.fisi.retail.repository.ValeCompraRepository;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -49,6 +55,12 @@ class CambioControllerTest {
 
     @Autowired
     private MockMvc mvc;
+
+    @Autowired
+    private SolicitudCambioRepository solicitudes;
+
+    @Autowired
+    private ValeCompraRepository vales;
 
     // ---------- RF-23: validacion del comprobante ----------
 
@@ -112,6 +124,23 @@ class CambioControllerTest {
                 .andExpect(jsonPath("$.vale.codigoVale").value(matchesPattern("VALE-\\d{4}-\\d{5}")))
                 .andExpect(jsonPath("$.vale.boletaOrigen").value(EN_PLAZO))
                 .andExpect(jsonPath("$.vale.estado").value("EMITIDO"));
+    }
+
+    @Test
+    @DisplayName("El vale se guarda con todo su monto como saldo, sin canje, y la solicitud con su tienda")
+    void guardaElValeSegunElEsquemaDeLaBase() throws Exception {
+        abrirCaja();
+        String clave = UUID.randomUUID().toString();
+        mvc.perform(registrar(CAMBIO_POLO, clave)).andExpect(status().isCreated());
+
+        SolicitudCambio solicitud = solicitudes.findByIdempotencyKey(clave).orElseThrow();
+        ValeCompra vale = vales.findBySolicitudId(solicitud.getIdSolicitud()).orElseThrow();
+
+        assertThat(solicitud.getTiendaId()).isEqualTo("11111111-1111-1111-1111-111111111111");
+        assertThat(vale.getMonto()).isEqualByComparingTo(new BigDecimal("59.90"));
+        assertThat(vale.getSaldoDisponible()).isEqualByComparingTo(vale.getMonto());
+        assertThat(vale.getFechaCanje()).isNull();
+        assertThat(vale.getFechaVencimiento()).isEqualTo(vale.getFechaEmision().plusDays(30));
     }
 
     @Test
