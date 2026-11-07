@@ -69,16 +69,17 @@ public class PedidosVentasEnMemoria implements PedidosVentasPort {
     }
 
     /**
-     * Arma un pedido creado hace {@code haceHoras}. Cada estado posterior ocurre unas horas después
-     * del anterior; el último es el estado actual.
+     * Arma un pedido creado hace {@code haceHoras}. Los estados se reparten en ese lapso, así que
+     * ninguno queda en el futuro; el último es el estado actual.
      */
     private static PedidoVentas pedido(String id, String canal, Contacto contacto, String metodoPago, Envio envio,
                                        int haceHoras, List<Item> items, String... estados) {
         Instant creado = Instant.now().minus(haceHoras, ChronoUnit.HOURS).truncatedTo(ChronoUnit.SECONDS);
+        long pasoMinutos = haceHoras * 60L / estados.length;
         List<Historial> historial = new ArrayList<>();
         for (int i = 0; i < estados.length; i++) {
             String motivo = "ANULADO".equals(estados[i]) ? "Solicitado por el cliente" : null;
-            historial.add(new Historial(estados[i], creado.plus(i * 6L, ChronoUnit.HOURS).toString(), motivo));
+            historial.add(new Historial(estados[i], creado.plus(i * pasoMinutos, ChronoUnit.MINUTES).toString(), motivo));
         }
         BigDecimal total = items.stream()
                 .map(it -> it.precioUnitario().multiply(BigDecimal.valueOf(it.cantidad())))
