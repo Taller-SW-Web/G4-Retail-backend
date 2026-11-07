@@ -11,7 +11,7 @@ concurrency:
 jobs:
   integration:
     name: Build and Test Verification
-    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-ci.yml@eee89429526f60fd9b91f65b334c2332451daeb9
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-ci.yml@9547006854caf21e5902c9b1409fd232e8c9abc8
     with:
       component_name: ms-retail-backend
       technology: maven
