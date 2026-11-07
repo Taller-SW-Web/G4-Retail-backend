@@ -10,6 +10,7 @@ import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -54,6 +55,9 @@ public class VentaService {
     /** Cliente REST para comunicación con Ventas y Postventa (G5). */
     private final VentasClient ventasClient;
 
+    /** Indice de pedidos por documento del comprador, para la consulta historica (F6). */
+    private final RegistroPedidosMostrador registroPedidos;
+
     /** Contador del correlativo de boleta (persistencia en memoria para el parcial;
      *  TODO: migrar a secuencia en Supabase antes del final). */
     private final AtomicInteger correlativoBoleta = new AtomicInteger(1);
@@ -74,13 +78,20 @@ public class VentaService {
 
     /** Constructor sin argumentos para compatibilidad con tests unitarios existentes. */
     public VentaService() {
-        this.ventasClient = null;
+        this(null, null);
     }
 
-    /** Constructor principal con inyección opcional del cliente de Ventas. */
+    /** Constructor con el cliente de Ventas, sin registro de pedidos (tests de F5). */
+    public VentaService(VentasClient ventasClient) {
+        this(ventasClient, null);
+    }
+
+    /** Constructor principal con inyección opcional del cliente de Ventas y del registro de pedidos (F6). */
     @Autowired
-    public VentaService(@Autowired(required = false) VentasClient ventasClient) {
+    public VentaService(@Autowired(required = false) VentasClient ventasClient,
+                        @Autowired(required = false) RegistroPedidosMostrador registroPedidos) {
         this.ventasClient = ventasClient;
+        this.registroPedidos = registroPedidos;
     }
 
     // ── API publica ──────────────────────────────────────────────────────────
@@ -205,6 +216,9 @@ public class VentaService {
 
         // 10. Guardar en cache de idempotencia y loguear auditoria
         cacheIdempotencia.put(idempotencyKey, respuesta);
+        if (registroPedidos != null) {
+            registroPedidos.registrar(request.comprobante().numeroDocumento(), pedidoId);
+        }
         log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={} vuelto={}",
                 ventaId, pedidoId, serie, correlativo, request.terminalPos(), totalCalculado, vuelto);
 
