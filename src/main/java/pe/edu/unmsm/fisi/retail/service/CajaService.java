@@ -214,7 +214,21 @@ public class CajaService {
      */
     @Transactional(readOnly = true)
     public void validarTurnoParaCobro(UUID usuarioId, UUID turnoId) {
+        // Guardia temprana: el usuario autenticado nunca puede ser el mismo UUID que el turno
+        if (usuarioId != null && usuarioId.equals(turnoId)) {
+            throw new ReglaNegocioException("USUARIO_TURNO_MISMATCH",
+                    "El identificador del usuario no puede coincidir con el del turno de caja");
+        }
         turnoAbierto(usuarioId, turnoId);
+    }
+
+    /**
+     * Overload de compatibilidad para tests existentes que no pasan terminalPos.
+     * Delega a la implementacion principal con {@code terminalPos = null} (sin validacion de terminal).
+     */
+    @Transactional
+    public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, RegistroCobroRequest peticion) {
+        return registrarCobro(usuarioId, turnoId, null, peticion);
     }
 
     /**
@@ -231,9 +245,20 @@ public class CajaService {
      */
     @Transactional
     public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, String terminalPos, RegistroCobroRequest peticion) {
-        CajaSesion sesion = (usuarioId != null && usuarioId.equals(turnoId))
-                ? validarTurnoAbierto(turnoId)
-                : turnoAbierto(usuarioId, turnoId);
+        // Guardia: el usuario autenticado nunca puede ser el mismo UUID que el turno
+        if (usuarioId != null && usuarioId.equals(turnoId)) {
+            throw new ReglaNegocioException("USUARIO_TURNO_MISMATCH",
+                    "El identificador del usuario no puede coincidir con el del turno de caja");
+        }
+
+        CajaSesion sesion = turnoAbierto(usuarioId, turnoId);
+
+        // Validar que la terminal del request coincide con la terminal del turno abierto
+        if (terminalPos != null && !sesion.getTerminalPosCodigo().equals(terminalPos)) {
+            throw new ReglaNegocioException("TERMINAL_NO_COINCIDE",
+                    "La terminal '" + terminalPos + "' no coincide con la del turno ("
+                    + sesion.getTerminalPosCodigo() + ")");
+        }
 
         var existente = cobroTurnoRepository.findByIdempotencyKey(peticion.idempotencyKey());
         if (existente.isPresent()) {

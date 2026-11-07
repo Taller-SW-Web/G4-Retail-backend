@@ -114,6 +114,14 @@ public class VentaService {
     }
 
     /**
+     * Overload de compatibilidad para tests unitarios existentes que no pasan usuario.
+     * Delega a la implementacion principal con {@code usuarioId = null}.
+     */
+    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
+        return registrarVenta(request, idempotencyKey, null);
+    }
+
+    /**
      * Procesa y registra una venta en mostrador (F5).
      *
      * <p>Flujo de ejecucion:</p>
@@ -144,7 +152,19 @@ public class VentaService {
         }
 
         // 2. Validar reglas de negocio
-        validarTurnoAbierto(request.turnoId());
+        // Si hay CajaService y usuario autenticado, validar el perfil/tienda del vendedor;
+        // si no (tests unitarios sin CajaService), caer al mock en memoria.
+        if (cajaService != null && usuarioId != null) {
+            try {
+                UUID turnoUuid = UUID.fromString(request.turnoId());
+                cajaService.validarTurnoParaCobro(usuarioId, turnoUuid);
+            } catch (IllegalArgumentException e) {
+                // turnoId no es UUID (mock de tests), fallback al registro en memoria
+                validarTurnoAbierto(request.turnoId());
+            }
+        } else {
+            validarTurnoAbierto(request.turnoId());
+        }
         BigDecimal totalCalculado = calcularTotal(request);
         validarMontoPago(request, totalCalculado);
         validarNormativaSunat(request, totalCalculado);
@@ -216,25 +236,24 @@ public class VentaService {
                 ventaId, pedidoId, "PAGADO", pagoResumen, comprobante, ticketRegalo
         );
 
-        // 10. Si CajaService esta presente, registrar y confirmar el cobro en el turno
+        // 10. Si CajaService esta presente, registrar el cobro en el turno.
+        // IMPORTANTE: se propaga la excepcion; un cobro fallido no debe quedar como PAGADO
+        // ni debe ser cacheable (el reintento con la misma Idempotency-Key debe poder reintentar el cobro).
         if (cajaService != null && idempotencyKey != null) {
-            try {
-                UUID turnoUuid = UUID.fromString(request.turnoId());
-                cajaService.registrarCobro(turnoUuid, turnoUuid, new RegistroCobroRequest(
-                        idempotencyKey,
-                        medioPago,
-                        totalCalculado,
-                        montoRecibido,
-                        pedidoId,
-                        serie,
-                        correlativo
-                ));
-            } catch (Exception e) {
-                log.warn("No se pudo registrar el cobro en CajaService: {}", e.getMessage());
-            }
+            UUID turnoUuid = UUID.fromString(request.turnoId());
+            cajaService.registrarCobro(usuarioId, turnoUuid, request.terminalPos(),
+                    new RegistroCobroRequest(
+                            idempotencyKey,
+                            medioPago,
+                            totalCalculado,
+                            montoRecibido,
+                            pedidoId,
+                            serie,
+                            correlativo
+                    ));
         }
 
-        // 11. Guardar en cache de idempotencia y loguear auditoria
+        // 11. Guardar en cache de idempotencia y loguear auditoria (solo si el cobro fue exitoso)
         cacheIdempotencia.put(idempotencyKey, respuesta);
         log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={} vuelto={}",
                 ventaId, pedidoId, serie, correlativo, request.terminalPos(), totalCalculado, vuelto);
