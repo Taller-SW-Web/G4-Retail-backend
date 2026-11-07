@@ -58,6 +58,17 @@ public class GlobalExceptionHandler {
                 ex.getMessage(), peticion, List.of());
     }
 
+    /**
+     * Documento de identidad con formato invalido (F3, RF-09): {@code 400 DATO_INVALIDO}, codigo
+     * homologado con Ventas (G5). El campo rechazado viaja en {@code errores[]}.
+     */
+    @ExceptionHandler(DatoInvalidoException.class)
+    public ProblemDetail manejarDatoInvalido(DatoInvalidoException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getCampo(), ex.getMessage()));
+        return construir(HttpStatus.BAD_REQUEST, DatoInvalidoException.CODIGO, "Dato invalido",
+                ex.getMessage(), peticion, errores);
+    }
+
     /** Falla de Bean Validation sobre un cuerpo {@code @Valid}. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail manejarValidacion(MethodArgumentNotValidException ex, HttpServletRequest peticion) {
