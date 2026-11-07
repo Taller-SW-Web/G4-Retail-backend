@@ -5,6 +5,8 @@ run-name: CI | ${{ github.event.pull_request.head.ref || github.ref_name }} -> $
     branches:
     - develop
     - main
+    paths-ignore:
+    - '.github/**'
 permissions:
   contents: read
   actions: read
