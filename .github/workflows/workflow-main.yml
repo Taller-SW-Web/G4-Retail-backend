@@ -1,5 +1,5 @@
 name: Production Deployment and Rollback
-run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }} | ${{ inputs.release_tag || github.sha }}
+run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }}
 'on':
   push:
     branches:
