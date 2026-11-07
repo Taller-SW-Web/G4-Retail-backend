@@ -1,11 +1,12 @@
-# CD del backend: cuando CI pasa en main, dispara el redeploy en Railway.
-# Secrets requeridos en este repo:
-#   - RAILWAY_DEPLOY_HOOK_URL  (Settings > Deploy Hooks en Railway)
+# CD del backend: despliegue manual a Railway via CLI + Project Token.
+# Se dispara manualmente desde la pestaña Actions > Run workflow.
+#
+# Configuracion requerida en este repo (Settings > Secrets and variables > Actions):
+#   Secret:   RAILWAY_TOKEN    (Project Token de Railway, rlwy_proj_...)
+#   Variable: RAILWAY_SERVICE  (nombre del servicio backend en Railway)
 name: CD backend
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -19,7 +20,6 @@ jobs:
     uses: Taller-SW-Web/devsecops-templates/.github/workflows/cd-railway.yml@main
     with:
       environment: production
-      health-url: ""  # Llenar con la URL publica si se quiere verificar, ej: https://<app>.railway.app/api/v1/retail/health
     secrets:
-      RAILWAY_DEPLOY_HOOK_URL: ${{ secrets.RAILWAY_DEPLOY_HOOK_URL }}
-
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
