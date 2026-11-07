@@ -7,6 +7,7 @@ on:
     branches: [main, develop, 'feat/**', 'fix/**']
   pull_request:
     branches: [main, develop]
+  workflow_call:
 
 jobs:
   test-y-build:

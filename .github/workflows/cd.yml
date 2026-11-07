@@ -1,0 +1,24 @@
+# CD del backend: cuando CI pasa en main, dispara el redeploy en Railway.
+# Secrets requeridos en este repo:
+#   - RAILWAY_DEPLOY_HOOK_URL  (Settings > Deploy Hooks en Railway)
+name: CD backend
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # 1. Primero corre CI (tests + build)
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # 2. Si CI pasa, despliega a Railway
+  deploy:
+    needs: ci
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/cd-railway.yml@main
+    with:
+      environment: production
+      health-url: ""  # Llenar con la URL publica si se quiere verificar, ej: https://<app>.railway.app/api/v1/retail/health
+    secrets:
+      RAILWAY_DEPLOY_HOOK_URL: ${{ secrets.RAILWAY_DEPLOY_HOOK_URL }}
+
