@@ -16,7 +16,7 @@ concurrency:
 jobs:
   quality:
     name: Security Analysis
-    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-pr-analysis.yml@9547006854caf21e5902c9b1409fd232e8c9abc8
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-pr-analysis.yml@main
     with:
       component_name: ms-retail-backend
       technology: maven
