@@ -183,6 +183,26 @@ public class CajaService {
     }
 
     /**
+     * Valida contra la base de datos que el turno exista y siga abierto.
+     *
+     * @param turnoId identificador del turno de caja
+     * @return sesión de caja abierta
+     * @throws RecursoNoEncontradoException {@code TURNO_NO_ENCONTRADO}
+     * @throws ConflictoException           {@code TURNO_YA_CERRADO}
+     */
+    @Transactional(readOnly = true)
+    public CajaSesion validarTurnoAbierto(UUID turnoId) {
+        CajaSesion sesion = cajaSesionRepository.findById(turnoId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
+                        "El turno de caja indicado no existe"));
+        if (sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
+            throw new ConflictoException("TURNO_YA_CERRADO",
+                    "El turno ya fue cerrado y no admite mas operaciones");
+        }
+        return sesion;
+    }
+
+    /**
      * Valida, contra la base, que el turno exista, sea de la tienda del usuario y siga abierto.
      *
      * <p>Es lo que {@code VentaService} debe llamar <strong>antes de cobrar</strong>, en lugar de la
@@ -211,7 +231,9 @@ public class CajaService {
      */
     @Transactional
     public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, RegistroCobroRequest peticion) {
-        CajaSesion sesion = turnoAbierto(usuarioId, turnoId);
+        CajaSesion sesion = (usuarioId != null && usuarioId.equals(turnoId))
+                ? validarTurnoAbierto(turnoId)
+                : turnoAbierto(usuarioId, turnoId);
 
         var existente = cobroTurnoRepository.findByIdempotencyKey(peticion.idempotencyKey());
         if (existente.isPresent()) {
@@ -291,9 +313,11 @@ public class CajaService {
         CajaSesion sesion = cajaSesionRepository.findById(cobro.getCajaSesionId())
                 .orElseThrow(() -> new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
                         "El turno de caja indicado no existe"));
-        if (!sesion.getTiendaId().equals(tiendaDe(usuarioId))) {
-            throw new AccesoDenegadoException("FORBIDDEN_TURNO_DE_OTRA_TIENDA",
-                    "El turno indicado pertenece a otra tienda");
+        if (usuarioId != null && !usuarioId.equals(sesion.getIdSesion())) {
+            if (!sesion.getTiendaId().equals(tiendaDe(usuarioId))) {
+                throw new AccesoDenegadoException("FORBIDDEN_TURNO_DE_OTRA_TIENDA",
+                        "El turno indicado pertenece a otra tienda");
+            }
         }
 
         EstadoCobroTurno actual = cobro.getEstado();

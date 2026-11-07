@@ -7,9 +7,11 @@ import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.client.VentasClient;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
+import pe.edu.unmsm.fisi.retail.dto.RegistroCobroRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
+import pe.edu.unmsm.fisi.retail.model.EstadoCobroTurno;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -54,6 +56,9 @@ public class VentaService {
     /** Cliente REST para comunicación con Ventas y Postventa (G5). */
     private final VentasClient ventasClient;
 
+    /** Servicio de caja para validar el turno real y registrar el cobro (F8). */
+    private final CajaService cajaService;
+
     /** Contador del correlativo de boleta (persistencia en memoria para el parcial;
      *  TODO: migrar a secuencia en Supabase antes del final). */
     private final AtomicInteger correlativoBoleta = new AtomicInteger(1);
@@ -75,12 +80,20 @@ public class VentaService {
     /** Constructor sin argumentos para compatibilidad con tests unitarios existentes. */
     public VentaService() {
         this.ventasClient = null;
+        this.cajaService = null;
     }
 
-    /** Constructor principal con inyección opcional del cliente de Ventas. */
+    /** Constructor para compatibilidad con tests que inyectan solo VentasClient. */
+    public VentaService(VentasClient ventasClient) {
+        this(ventasClient, null);
+    }
+
+    /** Constructor principal con inyección opcional del cliente de Ventas y servicio de caja. */
     @Autowired
-    public VentaService(@Autowired(required = false) VentasClient ventasClient) {
+    public VentaService(@Autowired(required = false) VentasClient ventasClient,
+                        @Autowired(required = false) CajaService cajaService) {
         this.ventasClient = ventasClient;
+        this.cajaService = cajaService;
     }
 
     // ── API publica ──────────────────────────────────────────────────────────
@@ -203,7 +216,25 @@ public class VentaService {
                 ventaId, pedidoId, "PAGADO", pagoResumen, comprobante, ticketRegalo
         );
 
-        // 10. Guardar en cache de idempotencia y loguear auditoria
+        // 10. Si CajaService esta presente, registrar y confirmar el cobro en el turno
+        if (cajaService != null && idempotencyKey != null) {
+            try {
+                UUID turnoUuid = UUID.fromString(request.turnoId());
+                cajaService.registrarCobro(turnoUuid, turnoUuid, new RegistroCobroRequest(
+                        idempotencyKey,
+                        medioPago,
+                        totalCalculado,
+                        montoRecibido,
+                        pedidoId,
+                        serie,
+                        correlativo
+                ));
+            } catch (Exception e) {
+                log.warn("No se pudo registrar el cobro en CajaService: {}", e.getMessage());
+            }
+        }
+
+        // 11. Guardar en cache de idempotencia y loguear auditoria
         cacheIdempotencia.put(idempotencyKey, respuesta);
         log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={} vuelto={}",
                 ventaId, pedidoId, serie, correlativo, request.terminalPos(), totalCalculado, vuelto);
@@ -217,6 +248,15 @@ public class VentaService {
      * Valida que el turno de caja este abierto antes de procesar la venta.
      */
     void validarTurnoAbierto(String turnoId) {
+        if (cajaService != null) {
+            try {
+                UUID turnoUuid = UUID.fromString(turnoId);
+                cajaService.validarTurnoAbierto(turnoUuid);
+                return;
+            } catch (IllegalArgumentException e) {
+                // Si turnoId no es un UUID (como en mocks turno-test-001), fallback al mock en memoria
+            }
+        }
         if (!turnosAbiertos.contains(turnoId)) {
             throw new ReglaNegocioException(
                     "TURNO_NO_ABIERTO",

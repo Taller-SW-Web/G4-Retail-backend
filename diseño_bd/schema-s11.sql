@@ -82,6 +82,42 @@ CREATE TABLE IF NOT EXISTS RET_VALE_COMPRA (
         CHECK ((estado = 'CANJEADO' AND fecha_canje IS NOT NULL) OR (estado <> 'CANJEADO' AND fecha_canje IS NULL))
 );
 
+-- Migración evolutiva: si la tabla ya existía con la estructura inicial, renombrar/adaptar columnas
+DO $$
+BEGIN
+    -- 1. Renombrar solicitud_cambio_id -> solicitud_id si existe
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'ret_vale_compra' AND column_name = 'solicitud_cambio_id'
+    ) THEN
+        ALTER TABLE RET_VALE_COMPRA RENAME COLUMN solicitud_cambio_id TO solicitud_id;
+    END IF;
+
+    -- 2. Renombrar monto_a_favor -> monto si existe
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'ret_vale_compra' AND column_name = 'monto_a_favor'
+    ) THEN
+        ALTER TABLE RET_VALE_COMPRA RENAME COLUMN monto_a_favor TO monto;
+    END IF;
+
+    -- 3. Eliminar saldo_disponible si aún existe (F9 no maneja canjes parciales en S11)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'ret_vale_compra' AND column_name = 'saldo_disponible'
+    ) THEN
+        ALTER TABLE RET_VALE_COMPRA DROP COLUMN saldo_disponible;
+    END IF;
+
+    -- 4. Permitir cliente_id NULL
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'ret_vale_compra' AND column_name = 'cliente_id' AND is_nullable = 'NO'
+    ) THEN
+        ALTER TABLE RET_VALE_COMPRA ALTER COLUMN cliente_id DROP NOT NULL;
+    END IF;
+END $$;
+
 DROP TRIGGER IF EXISTS trg_ret_vale_compra_updated_at ON RET_VALE_COMPRA;
 CREATE TRIGGER trg_ret_vale_compra_updated_at
     BEFORE UPDATE ON RET_VALE_COMPRA

@@ -75,10 +75,10 @@ UPDATE RET_SOLICITUD_CAMBIO_MOSTRADOR r
 --    codigo_vale lo genera la secuencia (VALE-AAAA-NNNNN); el primero queda EMITIDO y el segundo CANJEADO.
 -- -----------------------------------------------------------------------------
 INSERT INTO RET_VALE_COMPRA
- (id_vale, solicitud_cambio_id, boleta_numero, cliente_id, tienda_id, monto_a_favor, saldo_disponible,
+ (id_vale, solicitud_id, boleta_numero, cliente_id, tienda_id, monto,
   fecha_emision, fecha_vencimiento, estado, fecha_canje)
 SELECT '17171717-0000-0000-0000-000000000001', r.id_solicitud, r.boleta_numero, r.cliente_id, r.tienda_id,
-       r.monto_acreditado, r.monto_acreditado,
+       r.monto_acreditado,
        r.fecha_inspeccion, r.fecha_inspeccion + INTERVAL '30 days', 'EMITIDO', NULL
   FROM RET_SOLICITUD_CAMBIO_MOSTRADOR r
  WHERE r.id_solicitud = '12121212-0000-0000-0000-000000000001'
@@ -86,10 +86,10 @@ SELECT '17171717-0000-0000-0000-000000000001', r.id_solicitud, r.boleta_numero, 
 ON CONFLICT DO NOTHING;
 
 INSERT INTO RET_VALE_COMPRA
- (id_vale, solicitud_cambio_id, boleta_numero, cliente_id, tienda_id, monto_a_favor, saldo_disponible,
+ (id_vale, solicitud_id, boleta_numero, cliente_id, tienda_id, monto,
   fecha_emision, fecha_vencimiento, estado, fecha_canje)
 SELECT '17171717-0000-0000-0000-000000000002', r.id_solicitud, r.boleta_numero, r.cliente_id, r.tienda_id,
-       r.monto_acreditado, 0.00,
+       r.monto_acreditado,
        r.fecha_inspeccion, r.fecha_inspeccion + INTERVAL '30 days', 'CANJEADO', r.fecha_inspeccion + INTERVAL '1 day'
   FROM RET_SOLICITUD_CAMBIO_MOSTRADOR r
  WHERE r.id_solicitud = '12121212-0000-0000-0000-000000000003'
