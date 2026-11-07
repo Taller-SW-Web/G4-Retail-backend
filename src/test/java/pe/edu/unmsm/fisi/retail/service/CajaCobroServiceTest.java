@@ -166,6 +166,28 @@ class CajaCobroServiceTest {
     }
 
     @Test
+    @DisplayName("Reintentar con la misma llave pero diferente importe o medio de pago responde 409 IDEMPOTENCY_CONFLICT")
+    void mismaLlaveConCuerpoDistintoRespondeConflicto() {
+        stubTurno(turno(EstadoCajaSesion.ABIERTA, TIENDA));
+        CobroTurno cobro = cobroExistente(TURNO, EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+        when(cobroTurnoRepository.findByIdempotencyKey(LLAVE)).thenReturn(Optional.of(cobro));
+
+        // Diferente monto
+        assertThatThrownBy(() -> cajaService.registrarCobro(USUARIO, TURNO, peticion("EFECTIVO", "200.00", "200.00")))
+                .isInstanceOf(ConflictoException.class)
+                .extracting(e -> ((ConflictoException) e).getCodigo())
+                .isEqualTo("IDEMPOTENCY_CONFLICT");
+
+        // Diferente medio de pago
+        assertThatThrownBy(() -> cajaService.registrarCobro(USUARIO, TURNO, peticion("TARJETA_POS", "116.91", null)))
+                .isInstanceOf(ConflictoException.class)
+                .extracting(e -> ((ConflictoException) e).getCodigo())
+                .isEqualTo("IDEMPOTENCY_CONFLICT");
+
+        verify(cobroTurnoRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("Una llave ya usada en otro turno responde 409")
     void llaveDeOtroTurnoSeRechaza() {
         stubTurno(turno(EstadoCajaSesion.ABIERTA, TIENDA));

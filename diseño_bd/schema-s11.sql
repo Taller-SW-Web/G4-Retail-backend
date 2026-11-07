@@ -6,27 +6,24 @@
 -- Requiere haber ejecutado antes diseño/schema.sql (depende de RET_CAJA_SESION y
 -- RET_SOLICITUD_CAMBIO_MOSTRADOR). Es idempotente: se puede ejecutar más de una vez.
 --
--- Cambios:
---   1. RET_SOLICITUD_CAMBIO_MOSTRADOR: + boleta_numero, + tienda_id, + estado de la solicitud
---   2. RET_VALE_COMPRA (nueva): vale VALE-2026-XXXXX con saldo a favor, vence a los 30 días
---   3. Secuencia y función generadora del código de vale
---   4. Índices sobre boleta_numero, cliente_id y tienda_id
+-- Cambios unificados con F5 y F9:
+--   1. RET_SOLICITUD_CAMBIO_MOSTRADOR: + boleta_numero, + tienda_id, + vendedor_id, + cantidad, + idempotency_key
+--   2. RET_VALE_COMPRA (nueva): alineada con F9 (solicitud_id, monto, cliente_id nullable, vigencia 30 días)
+--   3. Secuencia y función generadora del código de vale (VALE-AAAA-NNNNN)
+--   4. Índices sobre boleta_numero, cliente_id, tienda_id, turno y pedido
 --   5. RLS y políticas (mismo criterio que el resto de tablas RET_*)
---   6. RET_COBRO_TURNO (nueva): cobro de la venta asociado al turno, para el efectivo del corte Z
---
--- Reglas de la guía S11: boleta con <= 7 días naturales (RF-23); vale con vencimiento a 30 días
--- y estados EMITIDO | CANJEADO | ANULADO (RF-25).
+--   6. RET_COBRO_TURNO (nueva): cobro de la venta asociado al turno, para el efectivo del corte Z (F8)
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1. RET_SOLICITUD_CAMBIO_MOSTRADOR: boleta de origen y tienda
---    Las columnas se agregan NULL para no romper filas existentes; la API (F9) las exige.
---    No hay FK a una tabla de ventas: el comprobante lo emite Retail pero el pedido vive en
---    Ventas (G5), por eso solo se indexa y se valida el formato.
+-- 1. RET_SOLICITUD_CAMBIO_MOSTRADOR: boleta de origen, tienda y campos F9
 -- -----------------------------------------------------------------------------
 ALTER TABLE RET_SOLICITUD_CAMBIO_MOSTRADOR
     ADD COLUMN IF NOT EXISTS boleta_numero VARCHAR(20) NULL,
-    ADD COLUMN IF NOT EXISTS tienda_id     TEXT        NULL;
+    ADD COLUMN IF NOT EXISTS tienda_id     TEXT        NULL,
+    ADD COLUMN IF NOT EXISTS vendedor_id   UUID        NULL,
+    ADD COLUMN IF NOT EXISTS cantidad      INTEGER     NULL CHECK (cantidad IS NULL OR (cantidad BETWEEN 1 AND 99)),
+    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64) NULL;
 
 DO $$
 BEGIN
@@ -37,7 +34,10 @@ BEGIN
     END IF;
 END $$;
 
--- Las solicitudes ya existentes heredan la tienda de su turno de caja.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ret_solicitud_cambio_clave
+    ON RET_SOLICITUD_CAMBIO_MOSTRADOR (idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+-- Las solicitudes ya existentes heredan la tienda de su turno de caja si no la tienen
 UPDATE RET_SOLICITUD_CAMBIO_MOSTRADOR s
    SET tienda_id = c.tienda_id
   FROM RET_CAJA_SESION c
@@ -45,10 +45,9 @@ UPDATE RET_SOLICITUD_CAMBIO_MOSTRADOR s
    AND s.tienda_id IS NULL;
 
 -- -----------------------------------------------------------------------------
--- 2. SECUENCIA Y GENERADOR DEL CÓDIGO DE VALE  (VALE-2026-00001, VALE-2026-00002, ...)
---    El correlativo es global y no se reinicia por año: el año solo forma parte del código.
+-- 2. SECUENCIA Y GENERADOR DEL CÓDIGO DE VALE (VALE-2026-00001, VALE-2026-00002, ...)
 -- -----------------------------------------------------------------------------
-CREATE SEQUENCE IF NOT EXISTS seq_ret_vale_compra START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS seq_ret_vale_compra START WITH 1 INCREMENT BY 1 MAXVALUE 99999;
 
 CREATE OR REPLACE FUNCTION fn_generar_codigo_vale()
 RETURNS VARCHAR AS $$
@@ -56,20 +55,18 @@ RETURNS VARCHAR AS $$
 $$ LANGUAGE sql;
 
 -- -----------------------------------------------------------------------------
--- 3. TABLA: RET_VALE_COMPRA
---    Vale de compra / nota de crédito térmica emitida tras un cambio aprobado (F9, RF-25).
+-- 3. TABLA: RET_VALE_COMPRA (Unificada con especificación e implementación F9)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_VALE_COMPRA (
     id_vale                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     codigo_vale             VARCHAR(20) NOT NULL UNIQUE DEFAULT fn_generar_codigo_vale()
                             CHECK (codigo_vale ~ '^VALE-[0-9]{4}-[0-9]{5,}$'),
-    solicitud_cambio_id     UUID NOT NULL,
+    solicitud_id            UUID NOT NULL UNIQUE,
     boleta_numero           VARCHAR(20) NOT NULL
                             CHECK (boleta_numero ~ '^[BF][0-9]{3}-[0-9]{8}$'),
-    cliente_id              UUID NOT NULL,  -- Beneficiario. Ref. externa lógica: Módulo Seguridad
+    cliente_id              UUID NULL,  -- Opcional para atención en mostrador (F9)
     tienda_id               TEXT NOT NULL,
-    monto_a_favor           DECIMAL(12, 2) NOT NULL CHECK (monto_a_favor > 0),
-    saldo_disponible        DECIMAL(12, 2) NOT NULL CHECK (saldo_disponible >= 0),
+    monto                   DECIMAL(12, 2) NOT NULL CHECK (monto >= 0),
     fecha_emision           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     fecha_vencimiento       TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '30 days'),
     estado                  VARCHAR(20) NOT NULL DEFAULT 'EMITIDO'
@@ -77,19 +74,13 @@ CREATE TABLE IF NOT EXISTS RET_VALE_COMPRA (
     fecha_canje             TIMESTAMPTZ NULL,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_vale_solicitud_cambio
-        FOREIGN KEY (solicitud_cambio_id) REFERENCES RET_SOLICITUD_CAMBIO_MOSTRADOR(id_solicitud) ON DELETE RESTRICT,
-    CONSTRAINT chk_vale_saldo_no_excede_monto CHECK (saldo_disponible <= monto_a_favor),
-    CONSTRAINT chk_vale_vencimiento_posterior CHECK (fecha_vencimiento > fecha_emision),
-    -- Un vale canjeado no tiene saldo y deja constancia de cuándo se usó
-    CONSTRAINT chk_vale_canje_coherente CHECK (
-        (estado = 'CANJEADO' AND saldo_disponible = 0 AND fecha_canje IS NOT NULL)
-        OR (estado <> 'CANJEADO' AND fecha_canje IS NULL)
-    )
+    CONSTRAINT fk_vale_solicitud
+        FOREIGN KEY (solicitud_id) REFERENCES RET_SOLICITUD_CAMBIO_MOSTRADOR(id_solicitud) ON DELETE RESTRICT,
+    CONSTRAINT chk_vale_vencimiento_mayor
+        CHECK (fecha_vencimiento > fecha_emision),
+    CONSTRAINT chk_vale_canje_coherente
+        CHECK ((estado = 'CANJEADO' AND fecha_canje IS NOT NULL) OR (estado <> 'CANJEADO' AND fecha_canje IS NULL))
 );
-
--- Una solicitud de cambio emite como máximo un vale (evita doble emisión / fraude por doble canje)
-CREATE UNIQUE INDEX IF NOT EXISTS uq_vale_solicitud_cambio ON RET_VALE_COMPRA(solicitud_cambio_id);
 
 DROP TRIGGER IF EXISTS trg_ret_vale_compra_updated_at ON RET_VALE_COMPRA;
 CREATE TRIGGER trg_ret_vale_compra_updated_at
@@ -98,7 +89,7 @@ CREATE TRIGGER trg_ret_vale_compra_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- -----------------------------------------------------------------------------
--- 4. ÍNDICES
+-- 4. ÍNDICES DE RENDIMIENTO Y CONSULTA S11
 -- -----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_cambio_boleta_numero  ON RET_SOLICITUD_CAMBIO_MOSTRADOR(boleta_numero);
 CREATE INDEX IF NOT EXISTS idx_cambio_cliente        ON RET_SOLICITUD_CAMBIO_MOSTRADOR(cliente_id);
@@ -110,7 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_vale_tienda_estado    ON RET_VALE_COMPRA(tienda_i
 CREATE INDEX IF NOT EXISTS idx_vale_vencimiento      ON RET_VALE_COMPRA(fecha_vencimiento) WHERE estado = 'EMITIDO';
 
 -- -----------------------------------------------------------------------------
--- 5. ROW LEVEL SECURITY
+-- 5. ROW LEVEL SECURITY — RET_VALE_COMPRA
 -- -----------------------------------------------------------------------------
 ALTER TABLE RET_VALE_COMPRA ENABLE ROW LEVEL SECURITY;
 
@@ -122,24 +113,14 @@ BEGIN
 END $$;
 
 -- -----------------------------------------------------------------------------
--- 6. TABLA: RET_COBRO_TURNO
---    Cobro de una venta asociado al turno de caja, para que el efectivo cuente en el arqueo
---    y en el Reporte Z (F8 + F5).
---
---    Es un REGISTRO DE CAJA, no la venta: Retail no guarda pedidos ni pagos (viven en Ventas, G5).
---    Aqui solo queda cuanto entro a la gaveta en el turno, con el pedido de G5 como referencia
---    logica (sin FK, igual que boleta_numero).
---
---    - idempotency_key UNICA: reintentar una venta con la misma llave no crea otro cobro.
---    - El efectivo de la gaveta suma monto_total (el vuelto ya salio) de los cobros en EFECTIVO
---      cuyo estado no sea ANULADO; los pendientes y en revision cuentan porque el dinero ya esta
---      en la gaveta.
+-- 6. TABLA: RET_COBRO_TURNO (F8 + F5)
+--    Registro de caja de lo cobrado en el turno, para el corte Z y arqueo ciego.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS RET_COBRO_TURNO (
     id_cobro                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     caja_sesion_id          UUID NOT NULL,
     idempotency_key         VARCHAR(64) NOT NULL UNIQUE,
-    pedido_id               VARCHAR(40) NULL,   -- PED-AAAA-NNNNN de G5 (o el de contingencia local)
+    pedido_id               VARCHAR(40) NULL,
     comprobante_serie       VARCHAR(4)  NULL,
     comprobante_numero      VARCHAR(20) NULL,
     medio_pago              VARCHAR(20) NOT NULL

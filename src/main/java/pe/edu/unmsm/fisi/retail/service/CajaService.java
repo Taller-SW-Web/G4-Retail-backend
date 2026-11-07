@@ -220,6 +220,15 @@ public class CajaService {
                 throw new ConflictoException("IDEMPOTENCY_KEY_EN_OTRO_TURNO",
                         "La llave de idempotencia ya se uso en otro turno de caja");
             }
+            // Contrato §2.3: Repetir la misma clave con un cuerpo distinto responde 409 IDEMPOTENCY_CONFLICT
+            if (peticion.medioPago() != null && !cobro.getMedioPago().equals(peticion.medioPago())) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT",
+                        "La llave de idempotencia ya fue utilizada con otro medio de pago");
+            }
+            if (peticion.montoTotal() != null && cobro.getMontoTotal().compareTo(escala(peticion.montoTotal())) != 0) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT",
+                        "La llave de idempotencia ya fue utilizada con un monto diferente");
+            }
             return CobroTurnoResponse.desde(cobro, true);
         }
 
