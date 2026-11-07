@@ -10,6 +10,7 @@ import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.RegistroCobroRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
+import pe.edu.unmsm.fisi.retail.exception.ConflictoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
@@ -71,8 +72,10 @@ public class VentaService {
     /** Secuencia global para garantizar unicidad del pedidoId incluso en el mismo milisegundo. */
     private final AtomicInteger secuenciaPedido = new AtomicInteger(1);
 
-    /** Cache de idempotencia en memoria (llave → respuesta ya generada). */
-    private final Map<String, VentaResponse> cacheIdempotencia = new ConcurrentHashMap<>();
+    /** Conserva el contexto original para autorizar la lectura del resultado de un reintento. */
+    private final Map<String, VentaProcesada> cacheIdempotencia = new ConcurrentHashMap<>();
+
+    private record VentaProcesada(VentaRequest solicitud, VentaResponse respuesta) {}
 
     /**
      * Mock Semana 8: conjunto de turnoIds abiertos en memoria.
@@ -162,9 +165,18 @@ public class VentaService {
      */
     public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey, UUID usuarioId) {
         // 1. Validar idempotencia: si la llave ya fue procesada, devolver la misma respuesta
-        if (idempotencyKey != null && cacheIdempotencia.containsKey(idempotencyKey)) {
+        VentaProcesada procesada = idempotencyKey == null ? null : cacheIdempotencia.get(idempotencyKey);
+        if (procesada != null) {
+            if (cajaService != null) {
+                cajaService.validarAccesoTurno(usuarioId, turnoComoUuid(procesada.solicitud().turnoId()),
+                        procesada.solicitud().terminalPos());
+            }
+            if (!procesada.solicitud().equals(normalizarSolicitud(request))) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT",
+                        "La clave de idempotencia ya fue utilizada con una venta diferente");
+            }
             log.info("Idempotencia activada para llave={}", idempotencyKey);
-            return cacheIdempotencia.get(idempotencyKey);
+            return procesada.respuesta();
         }
 
         // 2. Validar reglas de negocio
@@ -266,7 +278,7 @@ public class VentaService {
         }
 
         // 11. Guardar en cache de idempotencia y loguear auditoria (solo si el cobro fue exitoso)
-        cacheIdempotencia.put(idempotencyKey, respuesta);
+        cacheIdempotencia.put(idempotencyKey, new VentaProcesada(normalizarSolicitud(request), respuesta));
         if (registroPedidos != null) {
             registroPedidos.registrar(request.comprobante().numeroDocumento(), pedidoId);
         }
@@ -277,6 +289,26 @@ public class VentaService {
     }
 
     // ── Metodos privados de calculo ─────────────────────────────────────────
+
+    /**
+     * Copia inmutable del cuerpo completo para comparar reintentos (§2.3). Solo se normaliza la
+     * escala de los importes: 100 y 100.00 representan el mismo valor JSON.
+     */
+    private VentaRequest normalizarSolicitud(VentaRequest request) {
+        List<VentaRequest.ItemVentaDto> items = request.items().stream()
+                .map(item -> new VentaRequest.ItemVentaDto(item.sku(), item.cantidad(), normalizarMonto(item.precioFinal())))
+                .toList();
+        VentaRequest.PagoDto pago = request.pago();
+        VentaRequest.PagoDto pagoNormalizado = new VentaRequest.PagoDto(pago.medioPago(),
+                normalizarMonto(pago.montoRecibidoEfectivo()), normalizarMonto(pago.montoTarjeta()),
+                pago.referenciaOperacion());
+        return new VentaRequest(request.terminalPos(), request.turnoId(), request.clienteId(), items,
+                pagoNormalizado, request.comprobante(), request.emitirTicketRegalo(), request.cupon(), request.evaluacionId());
+    }
+
+    private BigDecimal normalizarMonto(BigDecimal monto) {
+        return monto == null ? null : monto.stripTrailingZeros();
+    }
 
     /**
      * Valida, contra el mock en memoria, que el turno de caja este abierto antes de procesar la venta.
