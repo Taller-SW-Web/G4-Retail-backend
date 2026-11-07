@@ -24,6 +24,10 @@ import pe.edu.unmsm.fisi.retail.service.ClienteService;
  * POST /api/v1/retail/clientes
  * </pre>
  *
+ * <p>Ambos endpoints aplican la validacion estricta de RF-09: DNI {@code ^\d{8}$}, RUC
+ * {@code ^(10|20)\d{9}$}, CE de 9 a 12 y pasaporte de 6 a 16 caracteres alfanumericos. Un formato
+ * invalido responde {@code 400 DATO_INVALIDO} (codigo homologado con Ventas G5).</p>
+ *
  * <p><strong>Limite estricto:</strong> solo maneja datos de identificacion (documento, nombre,
  * apellido). NO procesa ventas ni cobra dinero (eso corresponde a F4 y F5).</p>
  */

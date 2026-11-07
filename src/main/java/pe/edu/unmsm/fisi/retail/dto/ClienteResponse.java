@@ -8,7 +8,7 @@ package pe.edu.unmsm.fisi.retail.dto;
  * apellido viajan ya unidos en {@code nombreCompleto}.</p>
  *
  * @param clienteId       identificador del cliente en el padron
- * @param tipoDocumento   tipo de documento consultado, {@code DNI} o {@code RUC}
+ * @param tipoDocumento   tipo de documento: {@code DNI}, {@code RUC}, {@code CE} o {@code PASAPORTE}
  * @param numeroDocumento numero del documento
  * @param nombreCompleto  nombres y apellidos del cliente
  */
