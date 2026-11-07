@@ -1,20 +1,42 @@
 package pe.edu.unmsm.fisi.retail.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import pe.edu.unmsm.fisi.retail.client.VentasClient;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
+import pe.edu.unmsm.fisi.retail.dto.CalculoCarritoRequest;
+import pe.edu.unmsm.fisi.retail.dto.RegistroCobroRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
+import pe.edu.unmsm.fisi.retail.exception.ConflictoException;
+import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
+import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
+import pe.edu.unmsm.fisi.retail.integracion.productos.ProductosPort;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
+import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
+import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
+import pe.edu.unmsm.fisi.retail.repository.RegistroVentaRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -36,6 +58,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       la misma {@link VentaResponse}.</li>
  *   <li>Generar el ticket de cambio para regalo si se solicita.</li>
  *   <li>Integrar con el Módulo de Ventas (G5) para persistencia centralizada con fallback local.</li>
+ *   <li>Registrar el cobro en el turno de caja para el arqueo y corte Z (F8).</li>
+ *   <li>Persistir la venta y sus items para soporte de cambios y devoluciones (F9).</li>
+ *   <li>Registrar pedidos por documento para historial de compras (F6).</li>
  * </ul>
  */
 @Slf4j
@@ -54,8 +79,37 @@ public class VentaService {
     /** Cliente REST para comunicación con Ventas y Postventa (G5). */
     private final VentasClient ventasClient;
 
-    /** Contador del correlativo de boleta (persistencia en memoria para el parcial;
-     *  TODO: migrar a secuencia en Supabase antes del final). */
+    /** Servicio de caja para validar el turno real y registrar el cobro (F8). */
+    private final CajaService cajaService;
+
+    /** Indice de pedidos por documento del comprador, para la consulta historica (F6). */
+    private final RegistroPedidosMostrador registroPedidos;
+
+    /** Repositorio JDBC para persistencia local de ventas y comprobantes emitidos (F9). */
+    private final RegistroVentaRepository registroVentaRepository;
+
+    /** Puerto para consultar precios de catalogo (F2). */
+    private final ProductosPort productosPort;
+
+    /** Servicio de calculo de carrito para promociones y cupones (F4). */
+    private final CarritoService carritoService;
+
+    /** Repositorio de personal de tienda para resolver la tienda del vendedor. */
+    private final PersonalTiendaRepository personalTiendaRepository;
+
+    /** EntityManager para sincronizar cambios de JPA antes de operaciones JDBC. */
+    private final EntityManager entityManager;
+
+    /** Serializador JSON para la persistencia transaccional de idempotencia. */
+    private final ObjectMapper json;
+
+    /** Ejecutor transaccional para operaciones con bloqueo. */
+    private final TransactionTemplate transaccion;
+
+    /** Flag de integracion habilitada con Ventas G5. */
+    private final boolean ventasHabilitado;
+
+    /** Contador del correlativo de boleta (persistencia en memoria para tests sin base). */
     private final AtomicInteger correlativoBoleta = new AtomicInteger(1);
     private final AtomicInteger correlativoFactura = new AtomicInteger(1);
 
@@ -67,20 +121,62 @@ public class VentaService {
 
     /**
      * Mock Semana 8: conjunto de turnoIds abiertos en memoria.
-     * Cuando Angie (F8) tenga {@code CajaService} listo, reemplazar por
-     * consulta a la tabla {@code RET_CAJA_SESION}.
      */
     private final Set<String> turnosAbiertos = ConcurrentHashMap.newKeySet();
 
+    private record Lineas(List<VentaRequest.ItemVentaDto> items) {}
+
     /** Constructor sin argumentos para compatibilidad con tests unitarios existentes. */
     public VentaService() {
-        this.ventasClient = null;
+        this(null, null, null, null, null, null, null, null, null, null, true);
     }
 
-    /** Constructor principal con inyección opcional del cliente de Ventas. */
+    /** Constructor con el cliente de Ventas, sin caja ni registro de pedidos (tests de F5). */
+    public VentaService(VentasClient ventasClient) {
+        this(ventasClient, null, null, null, null, null, null, null, null, null, true);
+    }
+
+    /** Constructor con el servicio de caja, sin registro de pedidos (tests de F8). */
+    public VentaService(VentasClient ventasClient, CajaService cajaService) {
+        this(ventasClient, cajaService, null, null, null, null, null, null, null, null, true);
+    }
+
+    /** Constructor con el registro de pedidos, sin servicio de caja (tests de F6). */
+    public VentaService(VentasClient ventasClient, RegistroPedidosMostrador registroPedidos) {
+        this(ventasClient, null, registroPedidos, null, null, null, null, null, null, null, true);
+    }
+
+    /** Constructor con caja y registro de pedidos. */
+    public VentaService(VentasClient ventasClient, CajaService cajaService, RegistroPedidosMostrador registroPedidos) {
+        this(ventasClient, cajaService, registroPedidos, null, null, null, null, null, null, null, true);
+    }
+
+    /** Constructor principal con inyección opcional de dependencias. */
     @Autowired
-    public VentaService(@Autowired(required = false) VentasClient ventasClient) {
+    public VentaService(
+            @Autowired(required = false) VentasClient ventasClient,
+            @Autowired(required = false) CajaService cajaService,
+            @Autowired(required = false) RegistroPedidosMostrador registroPedidos,
+            @Autowired(required = false) RegistroVentaRepository registroVentaRepository,
+            @Autowired(required = false) ProductosPort productosPort,
+            @Autowired(required = false) CarritoService carritoService,
+            @Autowired(required = false) PersonalTiendaRepository personalTiendaRepository,
+            @Autowired(required = false) EntityManager entityManager,
+            @Autowired(required = false) ObjectMapper objectMapper,
+            @Autowired(required = false) TransactionTemplate transactionTemplate,
+            @Value("${retail.integracion.ventas.habilitado:true}") boolean ventasHabilitado
+    ) {
         this.ventasClient = ventasClient;
+        this.cajaService = cajaService;
+        this.registroPedidos = registroPedidos;
+        this.registroVentaRepository = registroVentaRepository;
+        this.productosPort = productosPort;
+        this.carritoService = carritoService;
+        this.personalTiendaRepository = personalTiendaRepository;
+        this.entityManager = entityManager;
+        this.json = objectMapper != null ? objectMapper : new ObjectMapper().findAndRegisterModules();
+        this.transaccion = transactionTemplate;
+        this.ventasHabilitado = ventasHabilitado;
     }
 
     // ── API publica ──────────────────────────────────────────────────────────
@@ -101,62 +197,182 @@ public class VentaService {
     }
 
     /**
-     * Procesa y registra una venta en mostrador (F5).
-     *
-     * <p>Flujo de ejecucion:</p>
-     * <ol>
-     *   <li>Verifica si la {@code Idempotency-Key} ya fue procesada; si es asi,
-     *       devuelve la respuesta almacenada inmediatamente.</li>
-     *   <li>Valida que el turno de caja este abierto (RF-13).</li>
-     *   <li>Calcula el total a pagar y valida el medio de pago (RF-13).</li>
-     *   <li>Valida la normativa SUNAT sobre el comprobante (RF-14).</li>
-     *   <li>Calcula la descomposicion fiscal: subtotal e IGV 18 % (RF-12).</li>
-     *   <li>Calcula el vuelto segun el monto recibido (RF-13).</li>
-     *   <li>Genera la serie y correlativo del comprobante (RF-14).</li>
-     *   <li>Construye la cadena QR para impresion termica (RF-14).</li>
-     *   <li>Si se solicito ticket de regalo, genera su codigo de canje (RF-15).</li>
-     *   <li>Almacena la respuesta en la cache de idempotencia y registra log de auditoria.</li>
-     * </ol>
-     *
-     * @param request        datos de la venta (items, pago, comprobante, etc.)
-     * @param idempotencyKey identificador unico de la operacion enviado por el frontend
-     * @return respuesta con los datos de la venta registrada y el comprobante emitido
-     * @throws ReglaNegocioException si alguna validacion de negocio falla
+     * Overload de compatibilidad para tests unitarios existentes que no pasan usuario.
      */
     public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
-        // 1. Validar idempotencia: si la llave ya fue procesada, devolver la misma respuesta
+        return registrarVenta(request, idempotencyKey, null);
+    }
+
+    /**
+     * Procesa y registra una venta en mostrador (F5).
+     *
+     * @param request datos de la venta
+     * @param idempotencyKey clave única de idempotencia
+     * @param usuarioId identificador del vendedor autenticado
+     * @return respuesta de la venta
+     */
+    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey, UUID usuarioId) {
+        // 1. Validar turno y vendedor
+        UUID turnoUuid = null;
+        if (cajaService != null) {
+            turnoUuid = turnoComoUuid(request.turnoId());
+            cajaService.validarTurnoParaCobro(usuarioId, turnoUuid, request.terminalPos());
+        } else {
+            validarTurnoAbierto(request.turnoId());
+        }
+
+        // 2. Resolver precios unitarios si no vienen dados
+        VentaRequest peticion = resolverLineas(request);
+        BigDecimal totalCalculado = calcularTotal(peticion);
+        validarMontoPago(peticion, totalCalculado);
+        validarNormativaSunat(peticion, totalCalculado);
+
+        if ("TARJETA_POS".equals(peticion.pago().medioPago())
+                && peticion.pago().montoTarjeta() != null
+                && totalCalculado.compareTo(peticion.pago().montoTarjeta()) != 0) {
+            throw new ConflictoException("MONTO_TARJETA_DISTINTO", "El importe de tarjeta difiere del total calculado");
+        }
+
+        String tiendaId = resolverTienda(usuarioId);
+        final UUID finalTurnoUuid = turnoUuid;
+
+        // 3. Si hay persistencia en base (RegistroVentaRepository), maneja idempotencia con huella SHA-256
+        if (registroVentaRepository != null && idempotencyKey != null) {
+            String huella = calcularHuella(new Object[]{tiendaId, request});
+            if (registroVentaRepository.operacion(idempotencyKey).isEmpty()) {
+                registroVentaRepository.reservar(idempotencyKey, usuarioId, huella,
+                        OffsetDateTime.now(ZoneOffset.UTC),
+                        serializar(new Lineas(peticion.items())));
+            }
+
+            if (transaccion != null) {
+                return transaccion.execute(status ->
+                        ejecutarCobro(peticion, idempotencyKey, usuarioId, finalTurnoUuid, tiendaId, totalCalculado, huella));
+            } else {
+                return ejecutarCobro(peticion, idempotencyKey, usuarioId, finalTurnoUuid, tiendaId, totalCalculado, huella);
+            }
+        }
+
+        // 4. En memoria: validar idempotencia
         if (idempotencyKey != null && cacheIdempotencia.containsKey(idempotencyKey)) {
             log.info("Idempotencia activada para llave={}", idempotencyKey);
             return cacheIdempotencia.get(idempotencyKey);
         }
 
-        // 2. Validar reglas de negocio
-        validarTurnoAbierto(request.turnoId());
-        BigDecimal totalCalculado = calcularTotal(request);
-        validarMontoPago(request, totalCalculado);
-        validarNormativaSunat(request, totalCalculado);
+        return ejecutarCobro(peticion, idempotencyKey, usuarioId, finalTurnoUuid, tiendaId, totalCalculado, null);
+    }
 
-        OffsetDateTime ahora = OffsetDateTime.now();
-        String pedidoId = resolverPedidoId(request, totalCalculado, ahora, idempotencyKey);
-        String ventaId = UUID.randomUUID().toString();
-        boolean factura = "FACTURA".equals(request.comprobante().tipo());
+    private String resolverTienda(UUID usuarioId) {
+        if (usuarioId != null && personalTiendaRepository != null) {
+            return personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId)
+                    .map(PersonalTienda::getTiendaId)
+                    .orElse("TIENDA-MIRAFLORES");
+        }
+        return "TIENDA-MIRAFLORES";
+    }
+
+    private VentaResponse ejecutarCobro(VentaRequest peticion, String idempotencyKey, UUID usuarioId,
+                                        UUID turnoUuid, String tiendaId, BigDecimal totalCalculado, String huella) {
+        OffsetDateTime ahora = OffsetDateTime.now(ZoneOffset.UTC);
+
+        if (registroVentaRepository != null && idempotencyKey != null) {
+            var operacion = registroVentaRepository.bloquearOperacion(idempotencyKey);
+            if ((usuarioId != null && !usuarioId.equals(operacion.usuarioId()))
+                    || (huella != null && !huella.equals(operacion.huella()))) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT", "La clave ya corresponde a otra venta");
+            }
+            if (operacion.respuesta() != null) {
+                return leer(operacion.respuesta(), VentaResponse.class);
+            }
+            if (operacion.fecha() != null) {
+                ahora = operacion.fecha().withOffsetSameInstant(ZoneOffset.UTC);
+            }
+        }
+
+        String pedidoId;
+        String estadoPedido;
+
+        if (ventasClient != null && ventasHabilitado) {
+            VentasCrearPedidoRequest pedidoRequest = armarPedidoVentasRequest(peticion, totalCalculado, ahora, tiendaId);
+            Optional<VentasPedidoResponse> respuestaVentas = ventasClient.crearPedido(pedidoRequest, idempotencyKey);
+            if (respuestaVentas.isPresent() && respuestaVentas.get().pedidoId() != null && !respuestaVentas.get().pedidoId().isBlank()) {
+                pedidoId = respuestaVentas.get().pedidoId();
+                estadoPedido = respuestaVentas.get().estado() != null ? respuestaVentas.get().estado() : "PAGADO";
+            } else if (registroVentaRepository != null) {
+                throw new ServicioExternoNoDisponibleException("VENTAS_NO_DISPONIBLE",
+                        "Ventas no confirmó el cobro. Reintenta la misma operación");
+            } else {
+                pedidoId = generarPedidoId();
+                estadoPedido = "PAGADO";
+            }
+        } else {
+            pedidoId = generarPedidoId();
+            estadoPedido = "PAGADO";
+        }
+
+        boolean factura = "FACTURA".equals(peticion.comprobante().tipo());
         String serie = factura ? "F001" : "B001";
-        int numero = factura ? correlativoFactura.getAndIncrement() : correlativoBoleta.getAndIncrement();
-        VentaResponse respuesta = emitirRespuesta(request, totalCalculado, ahora, pedidoId, ventaId,
-                serie, String.format("%05d", numero), "PAGADO");
-        cacheIdempotencia.put(idempotencyKey, respuesta);
+        String correlativo;
+        if (registroVentaRepository != null) {
+            int corr = registroVentaRepository.siguienteCorrelativo(serie);
+            correlativo = String.format(Locale.ROOT, "%08d", corr);
+        } else {
+            int numero = factura ? correlativoFactura.getAndIncrement() : correlativoBoleta.getAndIncrement();
+            correlativo = String.format(Locale.ROOT, "%08d", numero);
+        }
+
+        String ventaId = UUID.randomUUID().toString();
+        VentaResponse respuesta = emitirRespuesta(peticion, totalCalculado, ahora, pedidoId, ventaId,
+                serie, correlativo, estadoPedido);
+
+        // 10. Registrar cobro en el turno de caja para Corte Z (F8)
+        if (cajaService != null) {
+            String medioPago = peticion.pago().medioPago();
+            BigDecimal recibido = "EFECTIVO".equals(medioPago)
+                    ? peticion.pago().montoRecibidoEfectivo()
+                    : totalCalculado;
+            cajaService.registrarCobro(usuarioId, turnoUuid, peticion.terminalPos(),
+                    new RegistroCobroRequest(
+                            idempotencyKey,
+                            medioPago,
+                            totalCalculado,
+                            recibido,
+                            pedidoId,
+                            serie,
+                            correlativo
+                    ));
+        }
+
+        // 11. Persistir venta en RET_VENTA para F9 (cambios y vales)
+        if (registroVentaRepository != null && idempotencyKey != null) {
+            if (entityManager != null && org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+                entityManager.flush();
+            }
+            registroVentaRepository.guardar(idempotencyKey, turnoUuid, tiendaId, respuesta,
+                    peticion.items(), serializar(respuesta));
+        }
+
+        // 12. Registrar en historial de compras de cliente (F6)
+        if (registroPedidos != null) {
+            registroPedidos.registrar(peticion.comprobante().numeroDocumento(), pedidoId);
+        }
+
+        if (idempotencyKey != null) {
+            cacheIdempotencia.put(idempotencyKey, respuesta);
+        }
+        log.info("Venta registrada: ventaId={} pedidoId={} serie={} correlativo={} terminal={} total={}",
+                ventaId, pedidoId, serie, correlativo, peticion.terminalPos(), totalCalculado);
+
         return respuesta;
     }
 
     VentaResponse emitirRespuesta(VentaRequest request, BigDecimal totalCalculado, OffsetDateTime ahora,
                                   String pedidoId, String ventaId, String serie, String correlativo, String estadoPedido) {
-        // 3. Calcular descomposicion fiscal
         BigDecimal igv = totalCalculado
                 .multiply(TASA_IGV)
                 .divide(BigDecimal.ONE.add(TASA_IGV), 2, RoundingMode.HALF_UP);
         BigDecimal subtotal = totalCalculado.subtract(igv).setScale(2, RoundingMode.HALF_UP);
 
-        // 4. Calcular vuelto segun medio de pago
         String medioPago = request.pago().medioPago();
         BigDecimal montoRecibido;
         BigDecimal vuelto;
@@ -168,14 +384,12 @@ public class VentaService {
             vuelto = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
 
-        // 6. Armar cadena QR de verificacion SUNAT
         String doc = request.comprobante().numeroDocumento() != null
                 ? request.comprobante().numeroDocumento() : "";
         String qr = String.join("|",
                 RUC_EMPRESA_MOCK, serie, correlativo,
                 igv.toPlainString(), totalCalculado.toPlainString(), doc);
 
-        // 7. Armar comprobante
         VentaResponse.ComprobanteEmitido comprobante = new VentaResponse.ComprobanteEmitido(
                 request.comprobante().tipo(),
                 serie,
@@ -187,12 +401,10 @@ public class VentaService {
                 qr
         );
 
-        // 8. Armar resumen de pago
         VentaResponse.PagoResumen pagoResumen = new VentaResponse.PagoResumen(
                 medioPago, montoRecibido, vuelto
         );
 
-        // 9. Ticket de regalo (opcional)
         VentaResponse.TicketRegalo ticketRegalo = null;
         if (request.emitirTicketRegalo()) {
             ticketRegalo = new VentaResponse.TicketRegalo(
@@ -206,11 +418,64 @@ public class VentaService {
         );
     }
 
+    private VentaRequest resolverLineas(VentaRequest solicitud) {
+        boolean requiereCotizar = solicitud.items().stream().anyMatch(it -> it.precioFinal() == null);
+        if (requiereCotizar && productosPort != null && carritoService != null) {
+            List<VentaRequest.ItemVentaDto> items = cotizar(solicitud);
+            return new VentaRequest(solicitud.terminalPos(), solicitud.turnoId(), solicitud.clienteId(), items,
+                    solicitud.pago(), solicitud.comprobante(), solicitud.emitirTicketRegalo(),
+                    solicitud.cupon(), solicitud.evaluacionId());
+        }
+        return solicitud;
+    }
+
+    private List<VentaRequest.ItemVentaDto> cotizar(VentaRequest solicitud) {
+        Map<String, Integer> cantidades = new LinkedHashMap<>();
+        solicitud.items().forEach(item -> cantidades.merge(item.sku(), item.cantidad(), Math::addExact));
+        var items = cantidades.entrySet().stream().map(item -> new CalculoCarritoRequest.ItemCarritoCalculoDto(
+                item.getKey(), item.getValue(), productosPort.consultarPrecio(item.getKey())
+                .map(precio -> precio.precioEfectivo()).filter(precio -> precio.signum() >= 0)
+                .orElseThrow(() -> new ReglaNegocioException("PRECIO_NO_DISPONIBLE",
+                        "No hay precio vigente para " + item.getKey())))).toList();
+        return carritoService.calcularTotales(new CalculoCarritoRequest(items, solicitud.cupon())).lineas().stream()
+                .map(linea -> {
+                    try {
+                        return new VentaRequest.ItemVentaDto(linea.sku(), linea.cantidad(),
+                                linea.precioFinal().divide(BigDecimal.valueOf(linea.cantidad()), 2, RoundingMode.UNNECESSARY));
+                    } catch (ArithmeticException e) {
+                        throw new ReglaNegocioException("MONTO_NO_DETERMINABLE",
+                                "El descuento no se puede atribuir por unidad a " + linea.sku());
+                    }
+                }).toList();
+    }
+
+    private String calcularHuella(Object dato) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(serializar(dato).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private String serializar(Object dato) {
+        try {
+            return json.writeValueAsString(dato);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("No se pudo procesar la venta", e);
+        }
+    }
+
+    private <T> T leer(String dato, Class<T> tipo) {
+        try {
+            return json.readValue(dato, tipo);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("No se pudo recuperar la venta registrada", e);
+        }
+    }
+
     // ── Metodos privados de calculo ─────────────────────────────────────────
 
-    /**
-     * Valida que el turno de caja este abierto antes de procesar la venta.
-     */
     void validarTurnoAbierto(String turnoId) {
         if (!turnosAbiertos.contains(turnoId)) {
             throw new ReglaNegocioException(
@@ -221,9 +486,15 @@ public class VentaService {
         }
     }
 
-    /**
-     * Suma {@code cantidad × precioFinal} de cada item y redondea a 2 decimales.
-     */
+    private UUID turnoComoUuid(String turnoId) {
+        try {
+            return UUID.fromString(turnoId);
+        } catch (IllegalArgumentException e) {
+            throw new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
+                    "El turno de caja indicado no existe");
+        }
+    }
+
     BigDecimal calcularTotal(VentaRequest request) {
         return request.items().stream()
                 .map(item -> item.precioFinal().multiply(BigDecimal.valueOf(item.cantidad())))
@@ -231,9 +502,6 @@ public class VentaService {
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
-    /**
-     * Valida el pago segun el medio utilizado (contrato §5.5, RF-13).
-     */
     void validarMontoPago(VentaRequest request, BigDecimal totalCalculado) {
         String medioPago = request.pago().medioPago();
 
@@ -261,9 +529,6 @@ public class VentaService {
         }
     }
 
-    /**
-     * Valida las reglas tributarias peruanas sobre comprobantes de pago.
-     */
     void validarNormativaSunat(VentaRequest request, BigDecimal totalCalculado) {
         String tipo = request.comprobante().tipo();
         String doc = request.comprobante().numeroDocumento();
@@ -287,32 +552,6 @@ public class VentaService {
         }
     }
 
-    /**
-     * Resuelve el identificador del pedido delegando en el microservicio de Ventas (G5)
-     * o aplicando fallback a generación local en caso de error o servicio inactivo.
-     */
-    private String resolverPedidoId(VentaRequest request, BigDecimal totalCalculado,
-                                    OffsetDateTime ahora, String idempotencyKey) {
-        if (ventasClient != null) {
-            try {
-                VentasCrearPedidoRequest pedidoRequest = armarPedidoVentasRequest(request, totalCalculado, ahora,
-                        "TIENDA-MIRAFLORES");
-                Optional<VentasPedidoResponse> respuestaVentas = ventasClient.crearPedido(pedidoRequest, idempotencyKey);
-                if (respuestaVentas.isPresent() && respuestaVentas.get().pedidoId() != null) {
-                    log.info("Pedido registrado exitosamente con identificador de Ventas G5: {}",
-                            respuestaVentas.get().pedidoId());
-                    return respuestaVentas.get().pedidoId();
-                }
-            } catch (Exception e) {
-                log.warn("Excepción al comunicarse con Ventas G5 (activando fallback local): {}", e.getMessage());
-            }
-        }
-        return generarPedidoId();
-    }
-
-    /**
-     * Transforma los datos de la venta de mostrador al formato canónico de Ventas (G5).
-     */
     VentasCrearPedidoRequest armarPedidoVentasRequest(VentaRequest request, BigDecimal totalCalculado,
                                                      OffsetDateTime ahora, String tiendaId) {
         UUID clienteUuid;
@@ -392,7 +631,6 @@ public class VentaService {
         );
     }
 
-    /** Genera un ID de pedido unico con marca de tiempo y secuencia para trazabilidad. */
     private String generarPedidoId() {
         OffsetDateTime ahora = OffsetDateTime.now();
         return String.format("VNT-%d%02d%02d-%05d",

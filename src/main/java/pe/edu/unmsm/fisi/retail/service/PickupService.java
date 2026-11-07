@@ -1,104 +1,143 @@
 package pe.edu.unmsm.fisi.retail.service;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.dto.EntregaPickupRequest;
 import pe.edu.unmsm.fisi.retail.dto.EntregaPickupResponse;
 import pe.edu.unmsm.fisi.retail.dto.PedidoPickupResponse;
-import pe.edu.unmsm.fisi.retail.dto.PedidoPickupResponse.Articulo;
+import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.exception.ConflictoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.PickupVentasPort;
+import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
+import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Bandeja y entrega de pedidos pickup en tienda (F7): RF-18 y RF-19.
  *
- * <p>El dueño del pedido es Ventas (G5) y la decisión de quién publica el estado
- * {@code LISTO_PARA_RECOJO} sigue pendiente (decisión #9 del contrato). Mientras tanto, para la
- * Semana 8, el servicio trabaja con pedidos de ejemplo en memoria. Cuando exista el endpoint de
- * Ventas, solo cambia de dónde salen los pedidos; las reglas de este servicio se mantienen.</p>
+ * <p>El pedido y su estado son de Ventas (G5): la bandeja se lee de Ventas y la entrega se le
+ * informa a Ventas, que lo pasa a {@code ENTREGADO}. Lo que sí es de Retail es la verificación en
+ * mostrador de quién recoge:</p>
+ * <ul>
+ *   <li>Si recoge el titular, su DNI debe coincidir con el del pedido. Si el pedido no trae DNI no
+ *   hay identidad que verificar y solo puede recoger un tercero con carta poder.</li>
+ *   <li>Si recoge un tercero, el vendedor debe haber verificado la carta poder.</li>
+ * </ul>
  *
  * <p>Límite estricto: solo entrega paquetes ya pagados. No crea pedidos ni cobra dinero.</p>
  */
+@Slf4j
 @Service
 public class PickupService {
 
     static final String LISTO_PARA_RECOJO = "LISTO_PARA_RECOJO";
+    private static final String PREFIJO_SUCURSAL = "TIENDA-";
 
-    /** Códigos de retiro de los pedidos de ejemplo; nunca viajan en la respuesta de la bandeja. */
-    private static final Map<String, String> CODIGOS_RETIRO = Map.of(
-            "PED-2026-08910", "A7K2Q9",
-            "PED-2026-08914", "B3M8X1",
-            "PED-2026-08897", "C5P4Z7",
-            "PED-2026-08871", "D9R6W2",
-            "PED-2026-08932", "E2T7Y5");
+    private final PickupVentasPort ventas;
+    private final PersonalTiendaRepository personalTiendaRepository;
+    private final Map<String, String> codigosPorUuid;
 
-    private final Map<String, PedidoPickupResponse> pedidos = new ConcurrentHashMap<>();
-    private final Set<String> entregados = ConcurrentHashMap.newKeySet();
-
-    public PickupService() {
-        List.of(
-                pedido("PED-2026-08910", "María González", "45678912", "Anaquel B-04", 3, LISTO_PARA_RECOJO,
-                        new Articulo("ZAP-RUN-41-BLANC", "Zapatilla Running Pegasus 40", "41", "Blanco", 1)),
-                pedido("PED-2026-08914", "Juan Pérez Torres", "72345678", "Estante A - Casillero 14", 5, LISTO_PARA_RECOJO,
-                        new Articulo("CAM-PERU-M-BLANC", "Camiseta Selección 2026", "M", "Blanco", 2),
-                        new Articulo("BAL-FUT-5-BLANC", "Balón de Fútbol Match N.° 5", "5", "Blanco", 1)),
-                pedido("PED-2026-08897", "Rosa Quispe Huamán", "40123987", "Anaquel C-11", 27, LISTO_PARA_RECOJO,
-                        new Articulo("LEG-TRA-S-NEGRO", "Leggings Training Compresión", "S", "Negro", 1)),
-                pedido("PED-2026-08871", "Diego Flores Ccori", "70881234", "Estante A - Casillero 02", 50, LISTO_PARA_RECOJO,
-                        new Articulo("CAS-OUT-L-VERDE", "Casaca Cortaviento Trail", "L", "Verde", 1)),
-                pedido("PED-2026-08932", "Lucero Vargas Paz", "48765432", "", 0, "EN_CAMINO_A_TIENDA",
-                        new Articulo("MOC-OUT-30L-GRIS", "Mochila Trekking 30 L", "30L", "Gris", 1))
-        ).forEach(p -> pedidos.put(p.pedidoId(), p));
+    /**
+     * @param codigosPorUuid pares {@code uuid=TIENDA-X} separados por coma, para los perfiles que aún
+     *                       guardan la tienda como UUID (D-05)
+     */
+    public PickupService(PickupVentasPort ventas,
+                         PersonalTiendaRepository personalTiendaRepository,
+                         @Value("${retail.tienda.codigos-por-uuid:}") String codigosPorUuid) {
+        this.ventas = ventas;
+        this.personalTiendaRepository = personalTiendaRepository;
+        this.codigosPorUuid = leerCodigos(codigosPorUuid);
     }
 
-    /** RF-18: pedidos pickup de la tienda que todavía no se entregan, del más reciente al más antiguo. */
-    public List<PedidoPickupResponse> pendientes() {
-        return pedidos.values().stream()
-                .filter(p -> !entregados.contains(p.pedidoId()))
-                .sorted((a, b) -> b.fechaArriboTienda().compareTo(a.fechaArriboTienda()))
-                .toList();
+    /** RF-18: pedidos pickup de la tienda del vendedor que todavía no se entregan. */
+    public List<PedidoPickupResponse> pendientes(UUID usuarioId) {
+        return ventas.listarPendientes(tiendaDe(usuarioId));
     }
 
     /**
-     * RF-19: registra la entrega física y emite la constancia.
+     * RF-19: verifica a quien recoge, informa la entrega a Ventas y devuelve la constancia.
      *
-     * <p>{@code 404} si el pedido no existe; {@code 409} si todavía no está listo para recojo o ya se
-     * entregó; {@code 422} si el código de retiro no corresponde al pedido.</p>
+     * <p>{@code 404} si el pedido no figura en la bandeja de la tienda; {@code 409} si todavía no está
+     * listo para recojo; {@code 422} si el DNI no es del titular, si el pedido no trae DNI y dice
+     * recoger el titular, o si falta la carta poder del tercero.</p>
      *
-     * @param encargadoId vendedor que entrega, tomado del token
+     * @param usuarioId vendedor que entrega, tomado del token
      */
-    public EntregaPickupResponse entregar(String pedidoId, UUID encargadoId, EntregaPickupRequest peticion) {
-        PedidoPickupResponse pedido = pedidos.get(pedidoId);
-        if (pedido == null) {
-            throw new RecursoNoEncontradoException("PEDIDO_NO_ENCONTRADO",
-                    "No existe el pedido " + pedidoId);
-        }
-        if (!LISTO_PARA_RECOJO.equals(pedido.estado()) || entregados.contains(pedidoId)) {
+    public EntregaPickupResponse entregar(String pedidoId, UUID usuarioId, EntregaPickupRequest peticion) {
+        String tiendaId = tiendaDe(usuarioId);
+        PedidoPickupResponse pedido = ventas.listarPendientes(tiendaId).stream()
+                .filter(p -> p.pedidoId().equals(pedidoId))
+                .findFirst()
+                .orElseThrow(() -> new RecursoNoEncontradoException("PEDIDO_NO_ENCONTRADO",
+                        "El pedido " + pedidoId + " no figura en la bandeja de la tienda"));
+
+        if (!LISTO_PARA_RECOJO.equals(pedido.estado())) {
             throw new ConflictoException("PEDIDO_NO_LISTO_PARA_RECOJO",
                     "El paquete no figura en estado listo para recojo");
         }
-        if (!peticion.codigoRetiro().equals(CODIGOS_RETIRO.get(pedidoId))) {
-            throw new ReglaNegocioException("CODIGO_RETIRO_INVALIDO",
-                    "El código de retiro no corresponde a este pedido");
+
+        if (peticion.esTerceroAutorizado()) {
+            if (!Boolean.TRUE.equals(peticion.cartaPoderVerificada())) {
+                throw new ReglaNegocioException("CARTA_PODER_REQUERIDA",
+                        "Un tercero solo puede recoger si presenta la carta poder del titular");
+            }
+        } else if (!tieneDni(pedido)) {
+            throw new ReglaNegocioException("DNI_TITULAR_NO_REGISTRADO",
+                    "El pedido no tiene DNI del titular registrado; solo puede recogerlo un tercero con carta poder");
+        } else if (!pedido.clienteDni().equals(peticion.dniRecoge())) {
+            throw new ReglaNegocioException("DNI_NO_COINCIDE_CON_TITULAR",
+                    "El DNI presentado no corresponde al titular del pedido");
         }
-        if (!entregados.add(pedidoId)) {
-            throw new ConflictoException("PEDIDO_NO_LISTO_PARA_RECOJO",
-                    "El paquete no figura en estado listo para recojo");
-        }
-        return new EntregaPickupResponse("CONST-" + pedidoId, Instant.now().toString(), "ENTREGADO");
+
+        EntregaPickupResponse constancia = ventas.confirmarEntrega(pedidoId, peticion);
+        log.info("Pickup entregado: pedido={} tienda={} vendedor={} tercero={} origen={}",
+                pedidoId, tiendaId, usuarioId, peticion.esTerceroAutorizado(), ventas.origen());
+        return constancia;
     }
 
-    private static PedidoPickupResponse pedido(String id, String cliente, String dni, String anaquel,
-                                               int haceHoras, String estado, Articulo... articulos) {
-        String arribo = Instant.now().minus(haceHoras, ChronoUnit.HOURS).toString();
-        return new PedidoPickupResponse(id, cliente, dni, anaquel, arribo, estado, List.of(articulos));
+    private static boolean tieneDni(PedidoPickupResponse pedido) {
+        return pedido.clienteDni() != null && !pedido.clienteDni().isBlank();
+    }
+
+    /**
+     * Código de sucursal ({@code TIENDA-...}) del vendedor según su perfil local.
+     *
+     * <p>Si el perfil todavía guarda la tienda como UUID (pendiente D-05), se traduce con
+     * {@code retail.tienda.codigos-por-uuid}. Un UUID sin traducción no se adivina: responder con la
+     * bandeja de otra sucursal sería peor que no responder, así que da {@code 409}.</p>
+     */
+    private String tiendaDe(UUID usuarioId) {
+        String tienda = personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId)
+                .map(PersonalTienda::getTiendaId)
+                .orElseThrow(() -> new AccesoDenegadoException("FORBIDDEN_USUARIO_SIN_TIENDA",
+                        "El usuario autenticado no tiene un perfil activo en la tienda"));
+        if (tienda.startsWith(PREFIJO_SUCURSAL)) {
+            return tienda;
+        }
+        String codigo = codigosPorUuid.get(tienda.toLowerCase());
+        if (codigo == null) {
+            throw new ConflictoException("TIENDA_SIN_CODIGO_SUCURSAL",
+                    "La tienda del perfil (" + tienda + ") no tiene código de sucursal configurado");
+        }
+        return codigo;
+    }
+
+    private static Map<String, String> leerCodigos(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return Map.of();
+        }
+        return Arrays.stream(texto.split(","))
+                .map(String::trim)
+                .filter(par -> par.contains("="))
+                .map(par -> par.split("=", 2))
+                .collect(Collectors.toUnmodifiableMap(par -> par[0].trim().toLowerCase(), par -> par[1].trim()));
     }
 }

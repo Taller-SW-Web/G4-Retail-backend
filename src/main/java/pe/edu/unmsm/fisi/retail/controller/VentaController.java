@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
-import pe.edu.unmsm.fisi.retail.service.CobroMostradorService;
+import pe.edu.unmsm.fisi.retail.service.VentaService;
 
 import java.util.UUID;
 
@@ -52,24 +52,25 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VentaController {
 
-    private final CobroMostradorService ventaService;
+    private final VentaService ventaService;
 
     /**
      * Registra la venta, emite el comprobante y devuelve los datos para el ticket termico.
      *
      * @param idempotencyKey clave unica generada por el cliente (UUID recomendado)
      * @param request        cuerpo de la venta con items, pago y comprobante
+     * @param token          JWT del usuario autenticado
      * @return {@code 201 Created} con el pedidoId, comprobante y ticket de regalo (si aplica)
      */
     @PostMapping
     public ResponseEntity<VentaResponse> registrarVenta(
-            @AuthenticationPrincipal Jwt token,
             @RequestHeader("Idempotency-Key")
             @NotBlank(message = "El header Idempotency-Key es obligatorio")
             @Size(max = 64)
             String idempotencyKey,
 
-            @Valid @RequestBody VentaRequest request
+            @Valid @RequestBody VentaRequest request,
+            @AuthenticationPrincipal Jwt token
     ) {
         UUID usuario;
         try {
@@ -77,7 +78,7 @@ public class VentaController {
         } catch (IllegalArgumentException | NullPointerException e) {
             throw new AccesoDenegadoException("TOKEN_SIN_USUARIO_VALIDO", "El token no identifica un usuario válido");
         }
-        VentaResponse respuesta = ventaService.registrar(usuario, idempotencyKey, request);
+        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey, usuario);
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 }

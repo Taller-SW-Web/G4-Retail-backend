@@ -5,8 +5,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pe.edu.unmsm.fisi.retail.dto.AperturaTurnoRequest;
 import pe.edu.unmsm.fisi.retail.dto.CierreTurnoRequest;
+import pe.edu.unmsm.fisi.retail.dto.CobroTurnoResponse;
 import pe.edu.unmsm.fisi.retail.dto.MovimientoTurnoRequest;
 import pe.edu.unmsm.fisi.retail.dto.MovimientoTurnoResponse;
+import pe.edu.unmsm.fisi.retail.dto.RegistroCobroRequest;
 import pe.edu.unmsm.fisi.retail.dto.ReporteZResponse;
 import pe.edu.unmsm.fisi.retail.dto.TurnoCajaResponse;
 import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
@@ -15,11 +17,14 @@ import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import pe.edu.unmsm.fisi.retail.model.CajaMovimiento;
 import pe.edu.unmsm.fisi.retail.model.CajaSesion;
+import pe.edu.unmsm.fisi.retail.model.CobroTurno;
 import pe.edu.unmsm.fisi.retail.model.EstadoCajaSesion;
+import pe.edu.unmsm.fisi.retail.model.EstadoCobroTurno;
 import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
 import pe.edu.unmsm.fisi.retail.model.TipoMovimientoCaja;
 import pe.edu.unmsm.fisi.retail.repository.CajaMovimientoRepository;
 import pe.edu.unmsm.fisi.retail.repository.CajaSesionRepository;
+import pe.edu.unmsm.fisi.retail.repository.CobroTurnoRepository;
 import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
 
 import java.math.BigDecimal;
@@ -54,6 +59,7 @@ public class CajaService {
     private final CajaSesionRepository cajaSesionRepository;
     private final CajaMovimientoRepository cajaMovimientoRepository;
     private final PersonalTiendaRepository personalTiendaRepository;
+    private final CobroTurnoRepository cobroTurnoRepository;
 
     /**
      * Turno vigente de la tienda del usuario autenticado.
@@ -177,16 +183,195 @@ public class CajaService {
     }
 
     /**
-     * Cobros en efectivo del turno.
+     * Valida contra la base de datos que el turno exista y siga abierto.
      *
-     * <p><strong>TODO (F5):</strong> integrar los cobros en efectivo del turno. Los cobros no viven
-     * en esta base ni son un movimiento de caja: los administra el módulo de Ventas. El reparto lo
-     * dice al cruzar F5 con F8 ("Con Miguel: para que las ventas en efectivo sumen al saldo en caja
-     * del turno"). Hasta que F5 publique ese total, la promesa de F8 se limita a fondo fijo +
-     * movimientos menores, y así lo refleja el Reporte Z.</p>
+     * @param turnoId identificador del turno de caja
+     * @return sesión de caja abierta
+     * @throws RecursoNoEncontradoException {@code TURNO_NO_ENCONTRADO}
+     * @throws ConflictoException           {@code TURNO_YA_CERRADO}
+     */
+    @Transactional(readOnly = true)
+    public CajaSesion validarTurnoAbierto(UUID turnoId) {
+        CajaSesion sesion = cajaSesionRepository.findById(turnoId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
+                        "El turno de caja indicado no existe"));
+        if (sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
+            throw new ConflictoException("TURNO_YA_CERRADO",
+                    "El turno ya fue cerrado y no admite mas operaciones");
+        }
+        return sesion;
+    }
+
+    /**
+     * Valida, contra la base, que el turno exista, sea de la tienda del usuario y siga abierto.
+     *
+     * <p>Es lo que {@code VentaService} debe llamar <strong>antes de cobrar</strong>, en lugar de la
+     * lista de turnos en memoria (mock de la Semana 8).</p>
+     *
+     * @throws RecursoNoEncontradoException {@code TURNO_NO_ENCONTRADO}
+     * @throws AccesoDenegadoException      {@code FORBIDDEN_TURNO_DE_OTRA_TIENDA}
+     * @throws ConflictoException           {@code TURNO_YA_CERRADO}
+     */
+    @Transactional(readOnly = true)
+    public void validarTurnoParaCobro(UUID usuarioId, UUID turnoId) {
+        validarTurnoParaCobro(usuarioId, turnoId, null);
+    }
+
+    /**
+     * Igual que {@link #validarTurnoParaCobro(UUID, UUID)}, y además exige que la venta venga de la
+     * terminal en la que se abrió el turno.
+     *
+     * @param terminalPos terminal del request; {@code null} no valida la terminal
+     * @throws ReglaNegocioException {@code TERMINAL_NO_COINCIDE}, mas los codigos de
+     *                               {@link #validarTurnoParaCobro(UUID, UUID)}
+     */
+    @Transactional(readOnly = true)
+    public void validarTurnoParaCobro(UUID usuarioId, UUID turnoId, String terminalPos) {
+        turnoAbiertoEnTerminal(usuarioId, turnoId, terminalPos);
+    }
+
+    /**
+     * Overload de compatibilidad para tests existentes que no pasan terminalPos.
+     * Delega a la implementacion principal con {@code terminalPos = null} (sin validacion de terminal).
+     */
+    @Transactional
+    public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, RegistroCobroRequest peticion) {
+        return registrarCobro(usuarioId, turnoId, null, peticion);
+    }
+
+    /**
+     * Deja registrado el cobro de una venta en el turno, para que el efectivo cuente en el arqueo.
+     *
+     * <p>Es idempotente: si ya existe un cobro con la misma {@code idempotencyKey} en este turno, lo
+     * devuelve con {@code reutilizado = true} y no crea otro. El cobro nace
+     * {@code PENDIENTE_CONFIRMACION}; cuando G5 responda, {@link #actualizarEstadoCobro} lo mueve.</p>
+     *
+     * @throws ReglaNegocioException {@code MEDIO_PAGO_INVALIDO}, {@code MONTO_COBRO_INVALIDO} o
+     *                               {@code MONTO_INSUFICIENTE} (efectivo recibido menor al total)
+     * @throws ConflictoException    {@code IDEMPOTENCY_KEY_EN_OTRO_TURNO} si la llave pertenece a otro
+     *                               turno, mas los codigos de {@link #validarTurnoParaCobro}
+     */
+    @Transactional
+    public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, String terminalPos, RegistroCobroRequest peticion) {
+        CajaSesion sesion = turnoAbiertoEnTerminal(usuarioId, turnoId, terminalPos);
+
+        var existente = cobroTurnoRepository.findByIdempotencyKey(peticion.idempotencyKey());
+        if (existente.isPresent()) {
+            CobroTurno cobro = existente.get();
+            if (!cobro.getCajaSesionId().equals(sesion.getIdSesion())) {
+                throw new ConflictoException("IDEMPOTENCY_KEY_EN_OTRO_TURNO",
+                        "La llave de idempotencia ya se uso en otro turno de caja");
+            }
+            // Contrato §2.3: Repetir la misma clave con un cuerpo distinto responde 409 IDEMPOTENCY_CONFLICT
+            if (peticion.medioPago() != null && !cobro.getMedioPago().equals(peticion.medioPago())) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT",
+                        "La llave de idempotencia ya fue utilizada con otro medio de pago");
+            }
+            if (peticion.montoTotal() != null && cobro.getMontoTotal().compareTo(escala(peticion.montoTotal())) != 0) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT",
+                        "La llave de idempotencia ya fue utilizada con un monto diferente");
+            }
+            return CobroTurnoResponse.desde(cobro, true);
+        }
+
+        String medioPago = peticion.medioPago();
+        if (!CobroTurno.EFECTIVO.equals(medioPago) && !CobroTurno.TARJETA_POS.equals(medioPago)) {
+            throw new ReglaNegocioException("MEDIO_PAGO_INVALIDO",
+                    "El medio de pago debe ser EFECTIVO o TARJETA_POS");
+        }
+        if (peticion.montoTotal() == null || peticion.montoTotal().signum() <= 0) {
+            throw new ReglaNegocioException("MONTO_COBRO_INVALIDO", "El total del cobro debe ser mayor que cero");
+        }
+
+        BigDecimal total = escala(peticion.montoTotal());
+        BigDecimal recibido = total;
+        BigDecimal vuelto = CERO;
+        if (CobroTurno.EFECTIVO.equals(medioPago)) {
+            if (peticion.montoRecibido() == null || escala(peticion.montoRecibido()).compareTo(total) < 0) {
+                throw new ReglaNegocioException("MONTO_INSUFICIENTE",
+                        "El efectivo recibido no cubre el total del cobro (S/ " + total + ")");
+            }
+            recibido = escala(peticion.montoRecibido());
+            vuelto = recibido.subtract(total);
+        }
+
+        CobroTurno cobro = CobroTurno.builder()
+                .cajaSesionId(sesion.getIdSesion())
+                .idempotencyKey(peticion.idempotencyKey())
+                .pedidoId(peticion.pedidoId())
+                .comprobanteSerie(peticion.comprobanteSerie())
+                .comprobanteNumero(peticion.comprobanteNumero())
+                .medioPago(medioPago)
+                .montoTotal(total)
+                .montoRecibido(recibido)
+                .vuelto(vuelto)
+                .estado(EstadoCobroTurno.PENDIENTE_CONFIRMACION)
+                .build();
+        cobroTurnoRepository.save(cobro);
+        return CobroTurnoResponse.desde(cobro, false);
+    }
+
+    /**
+     * Mueve el cobro a su estado segun la respuesta de Ventas (G5).
+     *
+     * <p>Transiciones: {@code PENDIENTE_CONFIRMACION} pasa a cualquier otro; {@code EN_REVISION_SUPERVISOR}
+     * pasa a {@code CONFIRMADO} o {@code ANULADO}; {@code CONFIRMADO} y {@code ANULADO} son finales.
+     * Anular un cobro de un turno ya cerrado no se permite: el arqueo ya se hizo con ese efectivo.</p>
+     *
+     * @param pedidoId pedido de G5, si ya se conoce; {@code null} deja el que tenia
+     * @throws RecursoNoEncontradoException {@code COBRO_NO_ENCONTRADO}
+     * @throws AccesoDenegadoException      {@code FORBIDDEN_TURNO_DE_OTRA_TIENDA}
+     * @throws ConflictoException           {@code COBRO_ESTADO_INVALIDO} o {@code TURNO_YA_CERRADO}
+     */
+    @Transactional
+    public CobroTurnoResponse actualizarEstadoCobro(UUID usuarioId, String idempotencyKey,
+                                                    EstadoCobroTurno nuevoEstado, String pedidoId) {
+        CobroTurno cobro = cobroTurnoRepository.findByIdempotencyKey(idempotencyKey)
+                .orElseThrow(() -> new RecursoNoEncontradoException("COBRO_NO_ENCONTRADO",
+                        "No existe un cobro con esa llave de idempotencia"));
+
+        CajaSesion sesion = cajaSesionRepository.findById(cobro.getCajaSesionId())
+                .orElseThrow(() -> new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
+                        "El turno de caja indicado no existe"));
+        if (usuarioId != null && !usuarioId.equals(sesion.getIdSesion())) {
+            if (!sesion.getTiendaId().equals(tiendaDe(usuarioId))) {
+                throw new AccesoDenegadoException("FORBIDDEN_TURNO_DE_OTRA_TIENDA",
+                        "El turno indicado pertenece a otra tienda");
+            }
+        }
+
+        EstadoCobroTurno actual = cobro.getEstado();
+        boolean permitido = switch (actual) {
+            case PENDIENTE_CONFIRMACION -> nuevoEstado != EstadoCobroTurno.PENDIENTE_CONFIRMACION;
+            case EN_REVISION_SUPERVISOR -> nuevoEstado == EstadoCobroTurno.CONFIRMADO
+                    || nuevoEstado == EstadoCobroTurno.ANULADO;
+            case CONFIRMADO, ANULADO -> false;
+        };
+        if (!permitido) {
+            throw new ConflictoException("COBRO_ESTADO_INVALIDO",
+                    "El cobro no puede pasar de " + actual + " a " + nuevoEstado);
+        }
+        if (nuevoEstado == EstadoCobroTurno.ANULADO && sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
+            throw new ConflictoException("TURNO_YA_CERRADO",
+                    "No se puede anular un cobro de un turno ya cerrado");
+        }
+
+        cobro.setEstado(nuevoEstado);
+        if (pedidoId != null) {
+            cobro.setPedidoId(pedidoId);
+        }
+        cobroTurnoRepository.save(cobro);
+        return CobroTurnoResponse.desde(cobro, false);
+    }
+
+    /**
+     * Efectivo cobrado por ventas en el turno: suma de los cobros en efectivo que no estan anulados.
+     *
+     * <p>Se cuenta el total y no lo recibido (el vuelto ya salio de la gaveta), y se incluyen los
+     * cobros pendientes o en revision: el dinero ya esta en la gaveta aunque G5 no haya confirmado.</p>
      */
     private BigDecimal ventasEnEfectivo(CajaSesion sesion) {
-        return CERO;
+        return nullSeguro(cobroTurnoRepository.totalEfectivoVigente(sesion.getIdSesion(), EstadoCobroTurno.ANULADO));
     }
 
     /** Fondo fijo + ventas en efectivo + ingresos menores - egresos menores. */
@@ -225,6 +410,17 @@ public class CajaService {
         if (sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
             throw new ConflictoException("TURNO_YA_CERRADO",
                     "El turno ya fue cerrado y no admite mas operaciones");
+        }
+        return sesion;
+    }
+
+    /** {@link #turnoAbierto} y, si se indica {@code terminalPos}, que coincida con la del turno. */
+    private CajaSesion turnoAbiertoEnTerminal(UUID usuarioId, UUID turnoId, String terminalPos) {
+        CajaSesion sesion = turnoAbierto(usuarioId, turnoId);
+        if (terminalPos != null && !sesion.getTerminalPosCodigo().equals(terminalPos)) {
+            throw new ReglaNegocioException("TERMINAL_NO_COINCIDE",
+                    "La terminal '" + terminalPos + "' no coincide con la del turno ("
+                    + sesion.getTerminalPosCodigo() + ")");
         }
         return sesion;
     }
