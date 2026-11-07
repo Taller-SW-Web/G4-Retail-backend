@@ -182,7 +182,6 @@ public class CambioServiceImpl implements CambioService {
                 .clienteId(peticion.clienteId())
                 .tiendaId(vendedor.getTiendaId())
                 .monto(monto)
-                .saldoDisponible(monto)
                 .fechaEmision(ahora)
                 .fechaVencimiento(ahora.plusDays(vigenciaValeDias))
                 .estado(EstadoVale.EMITIDO)

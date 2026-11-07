@@ -127,7 +127,7 @@ class CambioControllerTest {
     }
 
     @Test
-    @DisplayName("El vale se guarda con todo su monto como saldo, sin canje, y la solicitud con su tienda")
+    @DisplayName("El vale se guarda con su monto, sin canje y con 30 dias de vigencia; la solicitud, con su tienda")
     void guardaElValeSegunElEsquemaDeLaBase() throws Exception {
         abrirCaja();
         String clave = UUID.randomUUID().toString();
@@ -138,7 +138,6 @@ class CambioControllerTest {
 
         assertThat(solicitud.getTiendaId()).isEqualTo("11111111-1111-1111-1111-111111111111");
         assertThat(vale.getMonto()).isEqualByComparingTo(new BigDecimal("59.90"));
-        assertThat(vale.getSaldoDisponible()).isEqualByComparingTo(vale.getMonto());
         assertThat(vale.getFechaCanje()).isNull();
         assertThat(vale.getFechaVencimiento()).isEqualTo(vale.getFechaEmision().plusDays(30));
     }

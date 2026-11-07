@@ -115,13 +115,14 @@ diario va en `feat/`, `fix/`, `docs/` o `infra/`.
 
 ### Cambios y vales (Semana 11)
 
-En Supabase, con el esquema base de Retail ya instalado, ejecutar en una sola transacción `src/main/resources/db/registro-venta.sql` seguido de `diseño_bd/migracion-f9-vales.sql`. Con una sesión de `psql` configurada para el proyecto Retail:
+En Supabase, con el esquema base de Retail ya instalado, ejecutar en una sola transacción, en este orden, `src/main/resources/db/registro-venta.sql`, el script de la DBA `diseño_bd/schema-s11.sql` y `diseño_bd/migracion-f9-vales.sql`. Con una sesión de `psql` configurada para el proyecto Retail:
 
 ```sh
 psql -X -v ON_ERROR_STOP=1 --single-transaction \
   -f src/main/resources/db/registro-venta.sql \
+  -f diseño_bd/schema-s11.sql \
   -f diseño_bd/migracion-f9-vales.sql
 ```
 
-En SQL Editor, ejecutar el contenido de ambos archivos en ese orden, entre `BEGIN;` y `COMMIT;`. El perfil `local` prepara H2 automáticamente. Para verificar contra G5 configurar `G7_CLIENT_SECRET` en el backend y usar el POS con `VITE_USE_MOCKS=false`. La comprobación consiste en abrir caja, registrar el pedido confirmado, abrir **Solicitar cambio** desde la boleta y emitir el vale para esa compra.
+En SQL Editor, ejecutar el contenido de los tres archivos en ese orden, entre `BEGIN;` y `COMMIT;`. El perfil `local` prepara H2 automáticamente. Para verificar contra G5 configurar `G7_CLIENT_SECRET` en el backend y usar el POS con `VITE_USE_MOCKS=false`. La comprobación consiste en abrir caja, registrar el pedido confirmado, abrir **Solicitar cambio** desde la boleta y emitir el vale para esa compra.
 

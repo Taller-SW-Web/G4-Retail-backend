@@ -25,8 +25,8 @@ import java.util.UUID;
  * <p>Retail lo emite y lo numera de forma autonoma, con el formato {@code VALE-2026-00001}; Ventas no
  * interviene (reparticion de la Semana 11, confirmado por el PO).</p>
  *
- * <p>Las columnas siguen el esquema final de la DBA. {@code created_at} y {@code updated_at} las llena
- * la base y no se mapean.</p>
+ * <p>Las columnas siguen {@code schema-s11.sql} de la DBA. {@code created_at} y {@code updated_at} las
+ * llena la base y no se mapean.</p>
  */
 @Entity
 @Table(name = "RET_VALE_COMPRA")
@@ -45,7 +45,7 @@ public class ValeCompra {
     @Column(name = "codigo_vale", nullable = false, unique = true, length = 20)
     private String codigoVale;
 
-    @Column(name = "solicitud_cambio_id", nullable = false, unique = true)
+    @Column(name = "solicitud_id", nullable = false, unique = true)
     private UUID solicitudId;
 
     @Column(name = "boleta_numero", nullable = false, length = 20)
@@ -58,12 +58,8 @@ public class ValeCompra {
     private String tiendaId;
 
     /** Importe a favor del cliente: lo pagado por las unidades cambiadas. */
-    @Column(name = "monto_a_favor", nullable = false, precision = 12, scale = 2)
+    @Column(name = "monto", nullable = false, precision = 12, scale = 2)
     private BigDecimal monto;
-
-    /** Lo que queda por usar. Al emitir es igual al monto; nunca lo supera. */
-    @Column(name = "saldo_disponible", nullable = false, precision = 12, scale = 2)
-    private BigDecimal saldoDisponible;
 
     @Column(name = "fecha_emision", nullable = false)
     private OffsetDateTime fechaEmision;
