@@ -30,17 +30,23 @@ public class RegistroPedidosMostrador {
         if (documento == null || documento.isBlank() || pedidoId == null || pedidoId.isBlank()) {
             return;
         }
-        pedidosPorDocumento
-                .computeIfAbsent(documento.trim(), clave -> ConcurrentHashMap.newKeySet())
-                .add(pedidoId.trim());
+        Set<String> pedidos = pedidosPorDocumento.computeIfAbsent(documento.trim(), clave -> new LinkedHashSet<>());
+        synchronized (pedidos) {
+            pedidos.add(pedidoId.trim());
+        }
     }
 
-    /** Pedidos emitidos para ese documento; lista vacía si no hay ninguno. */
+    /** Pedidos emitidos para ese documento, en el orden en que se registraron; vacía si no hay ninguno. */
     public List<String> pedidosDe(String documento) {
         if (documento == null) {
             return List.of();
         }
         Set<String> pedidos = pedidosPorDocumento.get(documento.trim());
-        return pedidos == null ? List.of() : List.copyOf(new LinkedHashSet<>(pedidos));
+        if (pedidos == null) {
+            return List.of();
+        }
+        synchronized (pedidos) {
+            return List.copyOf(pedidos);
+        }
     }
 }
