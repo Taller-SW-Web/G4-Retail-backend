@@ -71,8 +71,10 @@ public class VentaService {
     /** Secuencia global para garantizar unicidad del pedidoId incluso en el mismo milisegundo. */
     private final AtomicInteger secuenciaPedido = new AtomicInteger(1);
 
-    /** Cache de idempotencia en memoria (llave → respuesta ya generada). */
-    private final Map<String, VentaResponse> cacheIdempotencia = new ConcurrentHashMap<>();
+    /** Conserva el contexto original para autorizar la lectura del resultado de un reintento. */
+    private final Map<String, VentaProcesada> cacheIdempotencia = new ConcurrentHashMap<>();
+
+    private record VentaProcesada(VentaRequest solicitud, VentaResponse respuesta) {}
 
     /**
      * Mock Semana 8: conjunto de turnoIds abiertos en memoria.
@@ -162,9 +164,14 @@ public class VentaService {
      */
     public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey, UUID usuarioId) {
         // 1. Validar idempotencia: si la llave ya fue procesada, devolver la misma respuesta
-        if (idempotencyKey != null && cacheIdempotencia.containsKey(idempotencyKey)) {
+        VentaProcesada procesada = idempotencyKey == null ? null : cacheIdempotencia.get(idempotencyKey);
+        if (procesada != null) {
+            if (cajaService != null) {
+                cajaService.validarAccesoTurno(usuarioId, turnoComoUuid(procesada.solicitud().turnoId()),
+                        procesada.solicitud().terminalPos());
+            }
             log.info("Idempotencia activada para llave={}", idempotencyKey);
-            return cacheIdempotencia.get(idempotencyKey);
+            return procesada.respuesta();
         }
 
         // 2. Validar reglas de negocio
@@ -266,7 +273,7 @@ public class VentaService {
         }
 
         // 11. Guardar en cache de idempotencia y loguear auditoria (solo si el cobro fue exitoso)
-        cacheIdempotencia.put(idempotencyKey, respuesta);
+        cacheIdempotencia.put(idempotencyKey, new VentaProcesada(request, respuesta));
         if (registroPedidos != null) {
             registroPedidos.registrar(request.comprobante().numeroDocumento(), pedidoId);
         }

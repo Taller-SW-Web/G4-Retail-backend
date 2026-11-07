@@ -231,6 +231,16 @@ public class CajaService {
     }
 
     /**
+     * Autoriza la lectura de una venta ya procesada contra su tienda y terminal originales.
+     * El turno puede estar cerrado: devolver el resultado original no registra un cobro nuevo
+     * (contrato §2.3 y §2.4).
+     */
+    @Transactional(readOnly = true)
+    public void validarAccesoTurno(UUID usuarioId, UUID turnoId, String terminalPos) {
+        validarTerminal(turnoDeTienda(usuarioId, turnoId), terminalPos);
+    }
+
+    /**
      * Overload de compatibilidad para tests existentes que no pasan terminalPos.
      * Delega a la implementacion principal con {@code terminalPos = null} (sin validacion de terminal).
      */
@@ -397,6 +407,15 @@ public class CajaService {
      * operar: no existe, no es tuyo, o ya se cerró.</p>
      */
     private CajaSesion turnoAbierto(UUID usuarioId, UUID turnoId) {
+        CajaSesion sesion = turnoDeTienda(usuarioId, turnoId);
+        if (sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
+            throw new ConflictoException("TURNO_YA_CERRADO",
+                    "El turno ya fue cerrado y no admite mas operaciones");
+        }
+        return sesion;
+    }
+
+    private CajaSesion turnoDeTienda(UUID usuarioId, UUID turnoId) {
         String tiendaId = tiendaDe(usuarioId);
 
         CajaSesion sesion = cajaSesionRepository.findById(turnoId)
@@ -407,22 +426,22 @@ public class CajaService {
             throw new AccesoDenegadoException("FORBIDDEN_TURNO_DE_OTRA_TIENDA",
                     "El turno indicado pertenece a otra tienda");
         }
-        if (sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
-            throw new ConflictoException("TURNO_YA_CERRADO",
-                    "El turno ya fue cerrado y no admite mas operaciones");
-        }
         return sesion;
     }
 
     /** {@link #turnoAbierto} y, si se indica {@code terminalPos}, que coincida con la del turno. */
     private CajaSesion turnoAbiertoEnTerminal(UUID usuarioId, UUID turnoId, String terminalPos) {
         CajaSesion sesion = turnoAbierto(usuarioId, turnoId);
+        validarTerminal(sesion, terminalPos);
+        return sesion;
+    }
+
+    private void validarTerminal(CajaSesion sesion, String terminalPos) {
         if (terminalPos != null && !sesion.getTerminalPosCodigo().equals(terminalPos)) {
             throw new ReglaNegocioException("TERMINAL_NO_COINCIDE",
                     "La terminal '" + terminalPos + "' no coincide con la del turno ("
                     + sesion.getTerminalPosCodigo() + ")");
         }
-        return sesion;
     }
 
     /**
