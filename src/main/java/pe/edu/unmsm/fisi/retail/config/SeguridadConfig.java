@@ -41,8 +41,13 @@ import java.util.UUID;
 @EnableWebSecurity
 public class SeguridadConfig {
 
-    /** Rutas publicas: el heartbeat de contingencia y la consola de la base en desarrollo. */
-    private static final String[] RUTAS_PUBLICAS = {"/api/v1/retail/health", "/h2-console/**"};
+    /**
+     * Rutas publicas: el heartbeat de contingencia, la consola de la base en desarrollo y la
+     * documentacion OpenAPI/Swagger, que describe el contrato sin exponer datos de negocio.
+     */
+    private static final String[] RUTAS_PUBLICAS = {
+            "/api/v1/retail/health", "/h2-console/**",
+            "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**"};
 
     private final String claveMock;
     private final String jwksUri;
