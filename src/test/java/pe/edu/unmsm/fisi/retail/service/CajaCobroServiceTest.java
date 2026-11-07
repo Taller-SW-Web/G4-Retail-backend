@@ -3,6 +3,9 @@ package pe.edu.unmsm.fisi.retail.service;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -338,6 +341,37 @@ class CajaCobroServiceTest {
         assertThat(reporte.saldoSistema()).isEqualByComparingTo("200.00");
     }
 
+    @ParameterizedTest(name = "§2.4: cambiar un cobro exige perfil activo, usuario={0}")
+    @NullSource
+    @ValueSource(strings = {"cccccccc-0000-0000-0001-000000000001", "dddddddd-0000-0000-0000-000000000001"})
+    void actualizarEstadoSinPerfilSeRechaza(String identificador) {
+        UUID usuario = identificador == null ? null : UUID.fromString(identificador);
+        CobroTurno cobro = cobroExistente(TURNO, EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+        when(cobroTurnoRepository.findByIdempotencyKey(LLAVE)).thenReturn(Optional.of(cobro));
+        when(cajaSesionRepository.findById(TURNO)).thenReturn(Optional.of(turno(EstadoCajaSesion.ABIERTA, TIENDA)));
+
+        assertThatThrownBy(() -> cajaService.actualizarEstadoCobro(usuario, LLAVE,
+                EstadoCobroTurno.CONFIRMADO, "PED-2026-00001"))
+                .isInstanceOf(AccesoDenegadoException.class)
+                .hasFieldOrPropertyWithValue("codigo", "FORBIDDEN_USUARIO_SIN_TIENDA");
+        assertThat(cobro.getEstado()).isEqualTo(EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+        verify(cobroTurnoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("§2.4: cambiar un cobro desde otra tienda responde 403 sin modificarlo")
+    void actualizarEstadoDeOtraTiendaSeRechaza() {
+        CobroTurno cobro = cobroExistente(TURNO, EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+        stubCobro(cobro, turno(EstadoCajaSesion.ABIERTA, OTRA_TIENDA));
+
+        assertThatThrownBy(() -> cajaService.actualizarEstadoCobro(USUARIO, LLAVE,
+                EstadoCobroTurno.ANULADO, null))
+                .isInstanceOf(AccesoDenegadoException.class)
+                .hasFieldOrPropertyWithValue("codigo", "FORBIDDEN_TURNO_DE_OTRA_TIENDA");
+        assertThat(cobro.getEstado()).isEqualTo(EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+        verify(cobroTurnoRepository, never()).save(any());
+    }
+
     // ---- ayudas ----
 
     private void stubTurno(CajaSesion sesion) {
@@ -392,3 +426,4 @@ class CajaCobroServiceTest {
                 .build();
     }
 }
+

@@ -328,9 +328,12 @@ public class CajaService {
      * pasa a {@code CONFIRMADO} o {@code ANULADO}; {@code CONFIRMADO} y {@code ANULADO} son finales.
      * Anular un cobro de un turno ya cerrado no se permite: el arqueo ya se hizo con ese efectivo.</p>
      *
+     * @param usuarioId usuario autenticado; debe pertenecer a la misma tienda del turno
+     * @param idempotencyKey llave del cobro
+     * @param nuevoEstado nuevo estado deseado
      * @param pedidoId pedido de G5, si ya se conoce; {@code null} deja el que tenia
-     * @throws RecursoNoEncontradoException {@code COBRO_NO_ENCONTRADO}
-     * @throws AccesoDenegadoException      {@code FORBIDDEN_TURNO_DE_OTRA_TIENDA}
+     * @throws RecursoNoEncontradoException {@code COBRO_NO_ENCONTRADO} o {@code TURNO_NO_ENCONTRADO}
+     * @throws AccesoDenegadoException      {@code FORBIDDEN_USUARIO_SIN_TIENDA} o {@code FORBIDDEN_TURNO_DE_OTRA_TIENDA}
      * @throws ConflictoException           {@code COBRO_ESTADO_INVALIDO} o {@code TURNO_YA_CERRADO}
      */
     @Transactional
@@ -343,11 +346,9 @@ public class CajaService {
         CajaSesion sesion = cajaSesionRepository.findById(cobro.getCajaSesionId())
                 .orElseThrow(() -> new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
                         "El turno de caja indicado no existe"));
-        if (usuarioId != null && !usuarioId.equals(sesion.getIdSesion())) {
-            if (!sesion.getTiendaId().equals(tiendaDe(usuarioId))) {
-                throw new AccesoDenegadoException("FORBIDDEN_TURNO_DE_OTRA_TIENDA",
-                        "El turno indicado pertenece a otra tienda");
-            }
+        if (!sesion.getTiendaId().equals(tiendaDe(usuarioId))) {
+            throw new AccesoDenegadoException("FORBIDDEN_TURNO_DE_OTRA_TIENDA",
+                    "El turno indicado pertenece a otra tienda");
         }
 
         EstadoCobroTurno actual = cobro.getEstado();
