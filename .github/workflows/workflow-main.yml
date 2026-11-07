@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Caller: Despliegue a Produccion — G4 Retail Backend
+# Al llegar codigo a main (push o merge), ejecuta CI y luego despliega
+# a Railway delegando toda la orquestacion a los templates reutilizables
+# de devsecops-templates.
+#
+# Configuracion requerida (Settings > Secrets and variables > Actions):
+#   Secret:   RAILWAY_TOKEN    — Project Token de Railway (rlwy_proj_...)
+#   Variable: RAILWAY_SERVICE  — Nombre del servicio backend en Railway
+#
+# No contiene jobs locales de ejecucion.
+# ---------------------------------------------------------------------------
+name: "Deploy Production — ms-retail-backend"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci_pipeline:
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-ci-maven.yml@main
+    with:
+      component_name: ms-retail-backend
+      java_version: "21"
+      maven_goals: verify
+
+  deploy_production:
+    needs: ci_pipeline
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-deploy-railway.yml@main
+    with:
+      component_name: ms-retail-backend
+      environment_name: production
+      service_name: ${{ vars.RAILWAY_SERVICE }}
+      java_version: "21"
+    secrets:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

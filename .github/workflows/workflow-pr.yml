@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Caller: Analisis de Pull Request — G4 Retail Backend
+# Ejecuta la pipeline de CI delegando toda la orquestacion al template
+# reutilizable de devsecops-templates (workflow-ci-maven).
+#
+# No contiene jobs locales de ejecucion. El mic solo declara cuando
+# ejecutar y que datos pasar al template.
+# ---------------------------------------------------------------------------
+name: "PR Analysis — ms-retail-backend"
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop, "feat/**", "fix/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci_pipeline:
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-ci-maven.yml@main
+    with:
+      component_name: ms-retail-backend
+      java_version: "21"
+      maven_goals: verify
