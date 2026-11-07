@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 import pe.edu.unmsm.fisi.retail.service.VentaService;
+
+import java.util.UUID;
 
 /**
  * Endpoint transaccional de cierre de venta presencial en mostrador (F5).
@@ -61,9 +65,11 @@ public class VentaController {
             @NotBlank(message = "El header Idempotency-Key es obligatorio")
             String idempotencyKey,
 
-            @Valid @RequestBody VentaRequest request
-    ) {
-        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey);
+            @Valid @RequestBody VentaRequest request,
+            @AuthenticationPrincipal Jwt principal) {
+        // Extraer el usuario autenticado (sub del JWT)
+        UUID usuarioId = UUID.fromString(principal.getSubject());
+        VentaResponse respuesta = ventaService.registrarVenta(request, idempotencyKey, usuarioId);
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 }

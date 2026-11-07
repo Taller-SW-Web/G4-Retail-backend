@@ -7,8 +7,10 @@ import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.client.VentasClient;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
+import pe.edu.unmsm.fisi.retail.dto.RegistroCobroRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
+import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
 
@@ -55,6 +57,9 @@ public class VentaService {
     /** Cliente REST para comunicación con Ventas y Postventa (G5). */
     private final VentasClient ventasClient;
 
+    /** Servicio de caja para validar el turno real y registrar el cobro (F8). */
+    private final CajaService cajaService;
+
     /** Indice de pedidos por documento del comprador, para la consulta historica (F6). */
     private final RegistroPedidosMostrador registroPedidos;
 
@@ -78,19 +83,31 @@ public class VentaService {
 
     /** Constructor sin argumentos para compatibilidad con tests unitarios existentes. */
     public VentaService() {
-        this(null, null);
+        this(null, null, null);
     }
 
-    /** Constructor con el cliente de Ventas, sin registro de pedidos (tests de F5). */
+    /** Constructor con el cliente de Ventas, sin caja ni registro de pedidos (tests de F5). */
     public VentaService(VentasClient ventasClient) {
-        this(ventasClient, null);
+        this(ventasClient, null, null);
     }
 
-    /** Constructor principal con inyección opcional del cliente de Ventas y del registro de pedidos (F6). */
+    /** Constructor con el servicio de caja, sin registro de pedidos (tests de F8). */
+    public VentaService(VentasClient ventasClient, CajaService cajaService) {
+        this(ventasClient, cajaService, null);
+    }
+
+    /** Constructor con el registro de pedidos, sin servicio de caja (tests de F6). */
+    public VentaService(VentasClient ventasClient, RegistroPedidosMostrador registroPedidos) {
+        this(ventasClient, null, registroPedidos);
+    }
+
+    /** Constructor principal con inyección opcional del cliente de Ventas, la caja (F8) y el registro de pedidos (F6). */
     @Autowired
     public VentaService(@Autowired(required = false) VentasClient ventasClient,
+                        @Autowired(required = false) CajaService cajaService,
                         @Autowired(required = false) RegistroPedidosMostrador registroPedidos) {
         this.ventasClient = ventasClient;
+        this.cajaService = cajaService;
         this.registroPedidos = registroPedidos;
     }
 
@@ -109,6 +126,15 @@ public class VentaService {
      */
     public void cerrarTurnoMock(String turnoId) {
         turnosAbiertos.remove(turnoId);
+    }
+
+    /**
+     * Overload de compatibilidad para tests unitarios existentes que no pasan usuario.
+     * Delega a la implementacion principal con {@code usuarioId = null}; con {@code CajaService}
+     * la venta se rechaza con {@code 403}, porque no hay vendedor con perfil activo.
+     */
+    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
+        return registrarVenta(request, idempotencyKey, null);
     }
 
     /**
@@ -134,7 +160,7 @@ public class VentaService {
      * @return respuesta con los datos de la venta registrada y el comprobante emitido
      * @throws ReglaNegocioException si alguna validacion de negocio falla
      */
-    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey) {
+    public VentaResponse registrarVenta(VentaRequest request, String idempotencyKey, UUID usuarioId) {
         // 1. Validar idempotencia: si la llave ya fue procesada, devolver la misma respuesta
         if (idempotencyKey != null && cacheIdempotencia.containsKey(idempotencyKey)) {
             log.info("Idempotencia activada para llave={}", idempotencyKey);
@@ -142,7 +168,16 @@ public class VentaService {
         }
 
         // 2. Validar reglas de negocio
-        validarTurnoAbierto(request.turnoId());
+        // Con CajaService, el turno se valida contra la base con la identidad del vendedor
+        // (perfil activo y tienda) y la terminal del request; el turno nunca sustituye al usuario.
+        // Sin CajaService (tests unitarios de F5), se usa el mock en memoria.
+        UUID turnoUuid = null;
+        if (cajaService != null) {
+            turnoUuid = turnoComoUuid(request.turnoId());
+            cajaService.validarTurnoParaCobro(usuarioId, turnoUuid, request.terminalPos());
+        } else {
+            validarTurnoAbierto(request.turnoId());
+        }
         BigDecimal totalCalculado = calcularTotal(request);
         validarMontoPago(request, totalCalculado);
         validarNormativaSunat(request, totalCalculado);
@@ -214,7 +249,23 @@ public class VentaService {
                 ventaId, pedidoId, "PAGADO", pagoResumen, comprobante, ticketRegalo
         );
 
-        // 10. Guardar en cache de idempotencia y loguear auditoria
+        // 10. Si CajaService esta presente, registrar el cobro en el turno.
+        // IMPORTANTE: se propaga la excepcion; un cobro fallido no debe quedar como PAGADO
+        // ni debe ser cacheable (el reintento con la misma Idempotency-Key debe poder reintentar el cobro).
+        if (cajaService != null) {
+            cajaService.registrarCobro(usuarioId, turnoUuid, request.terminalPos(),
+                    new RegistroCobroRequest(
+                            idempotencyKey,
+                            medioPago,
+                            totalCalculado,
+                            montoRecibido,
+                            pedidoId,
+                            serie,
+                            correlativo
+                    ));
+        }
+
+        // 11. Guardar en cache de idempotencia y loguear auditoria (solo si el cobro fue exitoso)
         cacheIdempotencia.put(idempotencyKey, respuesta);
         if (registroPedidos != null) {
             registroPedidos.registrar(request.comprobante().numeroDocumento(), pedidoId);
@@ -228,7 +279,8 @@ public class VentaService {
     // ── Metodos privados de calculo ─────────────────────────────────────────
 
     /**
-     * Valida que el turno de caja este abierto antes de procesar la venta.
+     * Valida, contra el mock en memoria, que el turno de caja este abierto antes de procesar la venta.
+     * Solo aplica sin {@code CajaService} (tests unitarios de F5).
      */
     void validarTurnoAbierto(String turnoId) {
         if (!turnosAbiertos.contains(turnoId)) {
@@ -237,6 +289,16 @@ public class VentaService {
                     "No hay un turno de caja abierto con id " + turnoId +
                     ". Debe abrir un turno antes de registrar ventas."
             );
+        }
+    }
+
+    /** Convierte el {@code turnoId} del request en UUID; si no lo es, el turno no existe. */
+    private UUID turnoComoUuid(String turnoId) {
+        try {
+            return UUID.fromString(turnoId);
+        } catch (IllegalArgumentException e) {
+            throw new RecursoNoEncontradoException("TURNO_NO_ENCONTRADO",
+                    "El turno de caja indicado no existe");
         }
     }
 
