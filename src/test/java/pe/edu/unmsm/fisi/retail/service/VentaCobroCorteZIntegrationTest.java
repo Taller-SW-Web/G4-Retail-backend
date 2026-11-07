@@ -1,184 +1,167 @@
 package pe.edu.unmsm.fisi.retail.service;
 
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import pe.edu.unmsm.fisi.retail.dto.CierreTurnoRequest;
-import pe.edu.unmsm.fisi.retail.dto.ReporteZResponse;
-import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
-import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
-import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
-import pe.edu.unmsm.fisi.retail.model.CajaSesion;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.annotation.Transactional;
 import pe.edu.unmsm.fisi.retail.model.CobroTurno;
-import pe.edu.unmsm.fisi.retail.model.EstadoCajaSesion;
-import pe.edu.unmsm.fisi.retail.model.EstadoCobroTurno;
-import pe.edu.unmsm.fisi.retail.model.PersonalTienda;
-import pe.edu.unmsm.fisi.retail.repository.CajaMovimientoRepository;
-import pe.edu.unmsm.fisi.retail.repository.CajaSesionRepository;
 import pe.edu.unmsm.fisi.retail.repository.CobroTurnoRepository;
-import pe.edu.unmsm.fisi.retail.repository.PersonalTiendaRepository;
 
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@ExtendWith(MockitoExtension.class)
-@DisplayName("Flujo Integrado: Venta en mostrador -> Cobro asociado -> Corte Z de Caja")
+/**
+ * Flujo de punta a punta, con repositorios reales: venta en mostrador → cobro en el turno → Corte Z.
+ *
+ * <p>No hay stubs de repositorio: el turno se abre por la API, la venta pasa por
+ * {@code VentaController} con el {@code sub} del JWT y el efectivo del Reporte Z sale de la suma que
+ * hace {@code CobroTurnoRepository} sobre lo que realmente se guardó. La integración con G5 se apaga
+ * para que el pedido use el correlativo local. Los datos de personal vienen de
+ * {@code datos-local.sql}; la clase es transaccional, así que cada prueba deshace lo que creó.</p>
+ */
+@SpringBootTest(properties = "retail.integracion.ventas.habilitado=false")
+@AutoConfigureMockMvc
+@ActiveProfiles({"local", "mock"})
+@Transactional
+@DisplayName("Flujo integrado: venta en mostrador -> cobro en el turno -> Corte Z")
 class VentaCobroCorteZIntegrationTest {
 
-    @Mock private CajaSesionRepository cajaSesionRepository;
-    @Mock private CajaMovimientoRepository cajaMovimientoRepository;
-    @Mock private CobroTurnoRepository cobroTurnoRepository;
-    @Mock private PersonalTiendaRepository personalTiendaRepository;
+    private static final String VENDEDOR = "bbbbbbbb-0000-0000-0000-000000000001";
+    private static final String TERMINAL = "POS-01";
+
+    @Autowired
+    private MockMvc mvc;
+
+    @Autowired
+    private CobroTurnoRepository cobroTurnoRepository;
+
+    @Test
+    @DisplayName("El efectivo cobrado computa en el Corte Z y la tarjeta queda fuera, sin sumas fijadas en la prueba")
+    void ventasDelTurnoComputanEnCorteZ() throws Exception {
+        String turnoId = abrirTurno();
+
+        registrarVenta(conToken(VENDEDOR), "idemp-efectivo-1", venta(TERMINAL, turnoId,
+                "{\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":150.00}", "100.00"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estadoPedido").value("PAGADO"))
+                .andExpect(jsonPath("$.pago.vuelto").value(50.00));
+        registrarVenta(conToken(VENDEDOR), "idemp-efectivo-2", venta(TERMINAL, turnoId,
+                "{\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":35.50}", "35.50"))
+                .andExpect(status().isCreated());
+        registrarVenta(conToken(VENDEDOR), "idemp-tarjeta-1", venta(TERMINAL, turnoId,
+                "{\"medioPago\":\"TARJETA_POS\",\"montoTarjeta\":80.00,\"referenciaOperacion\":\"OP-7788\"}", "80.00"))
+                .andExpect(status().isCreated());
+
+        CobroTurno cobro = cobroTurnoRepository.findByIdempotencyKey("idemp-efectivo-1").orElseThrow();
+        assertThat(cobro.getCajaSesionId()).isEqualTo(UUID.fromString(turnoId));
+        assertThat(cobro.getMontoTotal()).isEqualByComparingTo("100.00");
+        assertThat(cobro.getComprobanteSerie()).isEqualTo("B001");
+
+        // Saldo inicial 200 + efectivo 135.50 (la tarjeta no entra al cajón) = 335.50
+        mvc.perform(post("/api/v1/retail/caja/turnos/" + turnoId + "/cierre")
+                        .with(conToken(VENDEDOR))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"montoDeclarado\":335.50}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.saldoInicial").value(200.00))
+                .andExpect(jsonPath("$.ventasEfectivoTotal").value(135.50))
+                .andExpect(jsonPath("$.saldoSistema").value(335.50))
+                .andExpect(jsonPath("$.diferencia").value(0.00))
+                .andExpect(jsonPath("$.estado").value("CERRADA"));
+    }
+
+    @Test
+    @DisplayName("Reintentar con la misma Idempotency-Key no duplica el cobro en el Corte Z")
+    void reintentoNoDuplicaElCobro() throws Exception {
+        String turnoId = abrirTurno();
+        String cuerpo = venta(TERMINAL, turnoId,
+                "{\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":100.00}", "100.00");
+
+        registrarVenta(conToken(VENDEDOR), "idemp-reintento", cuerpo).andExpect(status().isCreated());
+        registrarVenta(conToken(VENDEDOR), "idemp-reintento", cuerpo).andExpect(status().isCreated());
+
+        mvc.perform(post("/api/v1/retail/caja/turnos/" + turnoId + "/cierre")
+                        .with(conToken(VENDEDOR))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"montoDeclarado\":300.00}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ventasEfectivoTotal").value(100.00));
+    }
+
+    @Test
+    @DisplayName("Negativo: el turno no sustituye al vendedor; un sub sin perfil activo responde 403 y no cobra")
+    void turnoNoSustituyeAlVendedor() throws Exception {
+        String turnoId = abrirTurno();
+
+        // El sub del token es el propio turnoId: antes esto se saltaba la validación de perfil/tienda
+        registrarVenta(conToken(turnoId), "idemp-sin-perfil", venta(TERMINAL, turnoId,
+                "{\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":100.00}", "100.00"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_USUARIO_SIN_TIENDA"));
+
+        assertThat(cobroTurnoRepository.findByIdempotencyKey("idemp-sin-perfil")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Negativo: una venta desde otra terminal responde 422 TERMINAL_NO_COINCIDE y no cobra")
+    void terminalDistintaALaDelTurno() throws Exception {
+        String turnoId = abrirTurno();
+
+        registrarVenta(conToken(VENDEDOR), "idemp-otra-terminal", venta("POS-99", turnoId,
+                "{\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":100.00}", "100.00"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("TERMINAL_NO_COINCIDE"));
+
+        assertThat(cobroTurnoRepository.findByIdempotencyKey("idemp-otra-terminal")).isEmpty();
+    }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    private CajaService cajaService() {
-        return new CajaService(cajaSesionRepository, cajaMovimientoRepository,
-                personalTiendaRepository, cobroTurnoRepository);
+    private org.springframework.test.web.servlet.ResultActions registrarVenta(
+            RequestPostProcessor token, String idempotencyKey, String cuerpo) throws Exception {
+        return mvc.perform(post("/api/v1/retail/ventas")
+                .with(token)
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(cuerpo));
     }
 
-    private VentaService ventaService(CajaService cs) {
-        return new VentaService(null, cs);
+    /** Cuerpo de una venta de un solo item por {@code precio}, con boleta sin DNI (menor a S/ 700). */
+    private static String venta(String terminal, String turnoId, String pago, String precio) {
+        return """
+                {"terminalPos":"%s","turnoId":"%s",
+                 "items":[{"sku":"SKU-POLO","cantidad":1,"precioFinal":%s}],
+                 "pago":%s,
+                 "comprobante":{"tipo":"BOLETA"},
+                 "emitirTicketRegalo":false}
+                """.formatted(terminal, turnoId, precio, pago);
     }
 
-    private CajaSesion sesionAbierta(UUID turnoId, UUID usuarioId, String tiendaId, String terminal) {
-        return CajaSesion.builder()
-                .idSesion(turnoId)
-                .tiendaId(tiendaId)
-                .terminalPosCodigo(terminal)
-                .vendedorId(usuarioId)
-                .fechaHoraApertura(OffsetDateTime.now())
-                .saldoInicialEfectivo(new BigDecimal("200.00"))
-                .estado(EstadoCajaSesion.ABIERTA)
-                .build();
+    /** Abre el turno de la terminal de prueba con S/ 200 y devuelve su {@code turnoId}. */
+    private String abrirTurno() throws Exception {
+        String respuesta = mvc.perform(post("/api/v1/retail/caja/turnos")
+                        .with(conToken(VENDEDOR))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"terminalPos\":\"" + TERMINAL + "\",\"saldoInicialEfectivo\":200.00}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        return JsonPath.read(respuesta, "$.turnoId");
     }
 
-    private PersonalTienda personal(UUID usuarioId, String tiendaId) {
-        return PersonalTienda.builder()
-                .usuarioId(usuarioId)
-                .tiendaId(tiendaId)
-                .codigoVendedor("VEN-001")
-                .activo(true)
-                .build();
-    }
-
-    private VentaRequest requestEfectivo(String terminal, String turnoId) {
-        VentaRequest.ItemVentaDto item = new VentaRequest.ItemVentaDto("SKU-POLO", 1, new BigDecimal("100.00"));
-        VentaRequest.PagoDto pago = new VentaRequest.PagoDto("EFECTIVO", new BigDecimal("100.00"), null, null);
-        VentaRequest.ComprobanteDto comprobante = new VentaRequest.ComprobanteDto("BOLETA", "12345678", "Juan Perez");
-        return new VentaRequest(terminal, turnoId, "cliente-1", List.of(item), pago, comprobante, false, null, null);
-    }
-
-    // ── Positivo: flujo completo venta → cobro → Corte Z ────────────────────
-
-    @Test
-    @DisplayName("Una venta en efectivo se cobra en el turno y el total real del repositorio computa en el Corte Z")
-    void ventaEnEfectivoComputaEnCorteZ() {
-        UUID usuarioId = UUID.randomUUID();
-        UUID turnoId   = UUID.randomUUID();
-        String tiendaId = "TIENDA-MIRAFLORES";
-        String terminal = "POS-01";
-
-        when(personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId))
-                .thenReturn(Optional.of(personal(usuarioId, tiendaId)));
-        when(cajaSesionRepository.findById(turnoId))
-                .thenReturn(Optional.of(sesionAbierta(turnoId, usuarioId, tiendaId, terminal)));
-        when(cobroTurnoRepository.findByIdempotencyKey("idemp-venta-1"))
-                .thenReturn(Optional.empty());
-
-        CajaService cajaService = cajaService();
-        VentaRequest request = requestEfectivo(terminal, turnoId.toString());
-
-        // 1. Registrar venta con usuarioId real
-        VentaResponse respuesta = ventaService(cajaService)
-                .registrarVenta(request, "idemp-venta-1", usuarioId);
-        assertThat(respuesta).isNotNull();
-        assertThat(respuesta.pago().medioPago()).isEqualTo("EFECTIVO");
-        assertThat(respuesta.comprobante().total()).isEqualByComparingTo("100.00");
-
-        // 2. Verificar que el cobro se persistió en el repositorio real (no suma fija)
-        verify(cobroTurnoRepository).save(any(CobroTurno.class));
-
-        // 3. Simular la suma que devuelve el repositorio después de persistir
-        when(cobroTurnoRepository.totalEfectivoVigente(eq(turnoId), eq(EstadoCobroTurno.ANULADO)))
-                .thenReturn(new BigDecimal("100.00"));   // lo que el repo reporta, no hardcodeado en el test
-
-        // 4. Corte Z: saldo inicial 200 + ventas efectivo 100 = 300
-        ReporteZResponse reporteZ = cajaService.cerrar(usuarioId, turnoId,
-                new CierreTurnoRequest(new BigDecimal("300.00"), "Cierre conforme"));
-
-        assertThat(reporteZ.saldoInicial()).isEqualByComparingTo("200.00");
-        assertThat(reporteZ.ventasEfectivoTotal()).isEqualByComparingTo("100.00");
-        assertThat(reporteZ.saldoSistema()).isEqualByComparingTo("300.00");
-        assertThat(reporteZ.saldoDeclarado()).isEqualByComparingTo("300.00");
-        assertThat(reporteZ.diferencia()).isEqualByComparingTo("0.00");
-        assertThat(reporteZ.estado()).isEqualTo("CERRADA");
-    }
-
-    // ── Negativo 1: usuarioId == turnoId ────────────────────────────────────
-
-    @Test
-    @DisplayName("Negativo: registrarCobro lanza USUARIO_TURNO_MISMATCH cuando usuarioId == turnoId")
-    void registrarCobro_conUsuarioIgualATurno_lanzaMismatch() {
-        // El mismo UUID para usuario y turno; no debe llegar nunca a validar perfil/tienda
-        UUID mismoUuid = UUID.randomUUID();
-        String tiendaId = "TIENDA-MIRAFLORES";
-        String terminal = "POS-01";
-
-        // No configuramos stubs de repo: si el guard falla antes, los mocks no se invocan
-        CajaService cajaService = cajaService();
-        VentaService ventaService = ventaService(cajaService);
-        VentaRequest request = requestEfectivo(terminal, mismoUuid.toString());
-
-        // La venta debe fallar y NO cachearse como PAGADO
-        assertThatThrownBy(() -> ventaService.registrarVenta(request, "idemp-mismatch", mismoUuid))
-                .isInstanceOf(ReglaNegocioException.class)
-                .hasMessageContaining("USUARIO_TURNO_MISMATCH");
-
-        // La caché de idempotencia no debe contener la llave fallida
-        // (un reintento con la misma clave debe poder volver a intentar el cobro)
-        verify(cobroTurnoRepository, never()).save(any());
-    }
-
-    // ── Negativo 2: terminal no coincide ────────────────────────────────────
-
-    @Test
-    @DisplayName("Negativo: registrarCobro lanza TERMINAL_NO_COINCIDE cuando la terminal del request difiere del turno")
-    void registrarCobro_conTerminalIncorrecta_lanzaTerminalNoCoincide() {
-        UUID usuarioId = UUID.randomUUID();
-        UUID turnoId   = UUID.randomUUID();
-        String tiendaId = "TIENDA-MIRAFLORES";
-
-        when(personalTiendaRepository.findByUsuarioIdAndActivoTrue(usuarioId))
-                .thenReturn(Optional.of(personal(usuarioId, tiendaId)));
-        // El turno está registrado en POS-01, pero el request viene de POS-99
-        when(cajaSesionRepository.findById(turnoId))
-                .thenReturn(Optional.of(sesionAbierta(turnoId, usuarioId, tiendaId, "POS-01")));
-        // Sin stub de cobroTurnoRepository: la excepción TERMINAL_NO_COINCIDE se lanza antes
-
-        CajaService cajaService = cajaService();
-        VentaService ventaService = ventaService(cajaService);
-        // terminal "POS-99" no coincide con la del turno "POS-01"
-        VentaRequest request = requestEfectivo("POS-99", turnoId.toString());
-
-        assertThatThrownBy(() -> ventaService.registrarVenta(request, "idemp-terminal", usuarioId))
-                .isInstanceOf(ReglaNegocioException.class)
-                .hasMessageContaining("TERMINAL_NO_COINCIDE");
-
-        verify(cobroTurnoRepository, never()).save(any());
+    private static RequestPostProcessor conToken(String sub) {
+        return jwt().jwt(token -> token.subject(sub));
     }
 }
-

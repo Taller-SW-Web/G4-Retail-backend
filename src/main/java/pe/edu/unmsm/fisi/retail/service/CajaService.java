@@ -214,12 +214,20 @@ public class CajaService {
      */
     @Transactional(readOnly = true)
     public void validarTurnoParaCobro(UUID usuarioId, UUID turnoId) {
-        // Guardia temprana: el usuario autenticado nunca puede ser el mismo UUID que el turno
-        if (usuarioId != null && usuarioId.equals(turnoId)) {
-            throw new ReglaNegocioException("USUARIO_TURNO_MISMATCH",
-                    "El identificador del usuario no puede coincidir con el del turno de caja");
-        }
-        turnoAbierto(usuarioId, turnoId);
+        validarTurnoParaCobro(usuarioId, turnoId, null);
+    }
+
+    /**
+     * Igual que {@link #validarTurnoParaCobro(UUID, UUID)}, y además exige que la venta venga de la
+     * terminal en la que se abrió el turno.
+     *
+     * @param terminalPos terminal del request; {@code null} no valida la terminal
+     * @throws ReglaNegocioException {@code TERMINAL_NO_COINCIDE}, mas los codigos de
+     *                               {@link #validarTurnoParaCobro(UUID, UUID)}
+     */
+    @Transactional(readOnly = true)
+    public void validarTurnoParaCobro(UUID usuarioId, UUID turnoId, String terminalPos) {
+        turnoAbiertoEnTerminal(usuarioId, turnoId, terminalPos);
     }
 
     /**
@@ -245,20 +253,7 @@ public class CajaService {
      */
     @Transactional
     public CobroTurnoResponse registrarCobro(UUID usuarioId, UUID turnoId, String terminalPos, RegistroCobroRequest peticion) {
-        // Guardia: el usuario autenticado nunca puede ser el mismo UUID que el turno
-        if (usuarioId != null && usuarioId.equals(turnoId)) {
-            throw new ReglaNegocioException("USUARIO_TURNO_MISMATCH",
-                    "El identificador del usuario no puede coincidir con el del turno de caja");
-        }
-
-        CajaSesion sesion = turnoAbierto(usuarioId, turnoId);
-
-        // Validar que la terminal del request coincide con la terminal del turno abierto
-        if (terminalPos != null && !sesion.getTerminalPosCodigo().equals(terminalPos)) {
-            throw new ReglaNegocioException("TERMINAL_NO_COINCIDE",
-                    "La terminal '" + terminalPos + "' no coincide con la del turno ("
-                    + sesion.getTerminalPosCodigo() + ")");
-        }
+        CajaSesion sesion = turnoAbiertoEnTerminal(usuarioId, turnoId, terminalPos);
 
         var existente = cobroTurnoRepository.findByIdempotencyKey(peticion.idempotencyKey());
         if (existente.isPresent()) {
@@ -415,6 +410,17 @@ public class CajaService {
         if (sesion.getEstado() != EstadoCajaSesion.ABIERTA) {
             throw new ConflictoException("TURNO_YA_CERRADO",
                     "El turno ya fue cerrado y no admite mas operaciones");
+        }
+        return sesion;
+    }
+
+    /** {@link #turnoAbierto} y, si se indica {@code terminalPos}, que coincida con la del turno. */
+    private CajaSesion turnoAbiertoEnTerminal(UUID usuarioId, UUID turnoId, String terminalPos) {
+        CajaSesion sesion = turnoAbierto(usuarioId, turnoId);
+        if (terminalPos != null && !sesion.getTerminalPosCodigo().equals(terminalPos)) {
+            throw new ReglaNegocioException("TERMINAL_NO_COINCIDE",
+                    "La terminal '" + terminalPos + "' no coincide con la del turno ("
+                    + sesion.getTerminalPosCodigo() + ")");
         }
         return sesion;
     }

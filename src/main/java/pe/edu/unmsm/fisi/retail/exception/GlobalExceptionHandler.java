@@ -58,6 +58,17 @@ public class GlobalExceptionHandler {
                 ex.getMessage(), peticion, List.of());
     }
 
+    /**
+     * Documento de identidad con formato invalido (F3, RF-09): {@code 400 DATO_INVALIDO}, codigo
+     * homologado con Ventas (G5). El campo rechazado viaja en {@code errores[]}.
+     */
+    @ExceptionHandler(DatoInvalidoException.class)
+    public ProblemDetail manejarDatoInvalido(DatoInvalidoException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getCampo(), ex.getMessage()));
+        return construir(HttpStatus.BAD_REQUEST, DatoInvalidoException.CODIGO, "Dato invalido",
+                ex.getMessage(), peticion, errores);
+    }
+
     /** Falla de Bean Validation sobre un cuerpo {@code @Valid}. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail manejarValidacion(MethodArgumentNotValidException ex, HttpServletRequest peticion) {
@@ -84,6 +95,15 @@ public class GlobalExceptionHandler {
         List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getName(), "Tipo o formato invalido"));
         return construir(HttpStatus.BAD_REQUEST, "PARAMETRO_INVALIDO", "Parametros invalidos",
                 "El parametro " + ex.getName() + " no tiene el tipo esperado", peticion, errores);
+    }
+
+    /** Parametro de consulta ausente o mal formado validado en el servicio (seccion 2.6). */
+    @ExceptionHandler(ParametroInvalidoException.class)
+    public ProblemDetail manejarParametroInvalido(ParametroInvalidoException ex, HttpServletRequest peticion) {
+        List<ErrorCampo> errores = List.of(new ErrorCampo(ex.getCampo(), ex.getMessage()));
+        String titulo = "PARAMETRO_OBLIGATORIO".equals(ex.getCodigo())
+                ? "Falta un parametro obligatorio" : "Parametros invalidos";
+        return construir(HttpStatus.BAD_REQUEST, ex.getCodigo(), titulo, ex.getMessage(), peticion, errores);
     }
 
     /**
