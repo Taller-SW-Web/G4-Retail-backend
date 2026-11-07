@@ -4,6 +4,8 @@ run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }} | ${{ inputs
   push:
     branches:
     - main
+    paths-ignore:
+    - '.github/**'
   workflow_dispatch:
     inputs:
       rollback:
@@ -19,7 +21,7 @@ permissions:
   actions: read
 jobs:
   delivery:
-    name: Continuous Delivery
+    name: Despliegue a producción
     uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-deploy.yml@main
     with:
       component_name: ms-retail-backend
