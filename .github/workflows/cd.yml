@@ -1,12 +1,13 @@
-# CD del backend: despliegue manual a Railway via CLI + Project Token.
-# Se dispara manualmente desde la pestaña Actions > Run workflow.
+# CD del backend: en push a main o ejecucion manual, corre CI y despliega a Railway via CLI.
 #
 # Configuracion requerida en este repo (Settings > Secrets and variables > Actions):
 #   Secret:   RAILWAY_TOKEN    (Project Token de Railway, rlwy_proj_...)
-#   Variable: RAILWAY_SERVICE  (nombre del servicio backend en Railway)
+#   Variable: RAILWAY_SERVICE  (nombre del servicio backend en Railway, o como Secret)
 name: CD backend
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
