@@ -95,7 +95,7 @@ class HistorialPedidosServiceTest {
     @DisplayName("RF-16: por código devuelve el pedido con la fecha en hora de Lima")
     void porCodigo() {
         when(ventas.consultar("PED-2026-00412"))
-                .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of()));
+                .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of())));
 
         PaginaPedidosResponse pagina = servicio.buscar(USUARIO, "PED-2026-00412", null, 0, 20);
 
