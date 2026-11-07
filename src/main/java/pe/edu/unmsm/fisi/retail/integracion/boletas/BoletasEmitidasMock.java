@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.boletas;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +33,7 @@ public class BoletasEmitidasMock implements BoletasEmitidasPort {
 
     private final Map<String, BoletaEmitida> boletas;
 
+    @Autowired
     public BoletasEmitidasMock() {
         this(Clock.systemUTC());
     }

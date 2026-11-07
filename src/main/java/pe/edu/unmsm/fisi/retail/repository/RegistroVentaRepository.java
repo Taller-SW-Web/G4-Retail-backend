@@ -7,6 +7,8 @@ import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -23,21 +25,24 @@ public class RegistroVentaRepository {
     public record Linea(String sku, int cantidad, BigDecimal precioPagado) {}
 
     public Optional<Operacion> operacion(String clave) {
-        return consultarOperacion(clave, "");
-    }
-
-    public Operacion bloquearOperacion(String clave) {
-        return consultarOperacion(clave, " FOR UPDATE").orElseThrow();
-    }
-
-    private Optional<Operacion> consultarOperacion(String clave, String bloqueo) {
         return jdbc.sql("""
                 SELECT usuario_id, huella, fecha_operacion, lineas, respuesta
                 FROM ret_venta_operacion WHERE clave = ?
-                """ + bloqueo).param(clave).query((fila, indice) -> new Operacion(
+                """).param(clave).query(this::mapearOperacion).optional();
+    }
+
+    public Operacion bloquearOperacion(String clave) {
+        return jdbc.sql("""
+                SELECT usuario_id, huella, fecha_operacion, lineas, respuesta
+                FROM ret_venta_operacion WHERE clave = ? FOR UPDATE
+                """).param(clave).query(this::mapearOperacion).optional().orElseThrow();
+    }
+
+    private Operacion mapearOperacion(ResultSet fila, int indice) throws SQLException {
+        return new Operacion(
                 fila.getObject("usuario_id", UUID.class), fila.getString("huella"),
                 fila.getObject("fecha_operacion", OffsetDateTime.class), fila.getString("lineas"),
-                fila.getString("respuesta"))).optional();
+                fila.getString("respuesta"));
     }
 
     public void reservar(String clave, UUID usuario, String huella, OffsetDateTime fecha, String lineas) {
@@ -48,8 +53,10 @@ public class RegistroVentaRepository {
     }
 
     public int siguienteCorrelativo(String serie) {
-        String secuencia = "B001".equals(serie) ? "ret_comprobante_b001_seq" : "ret_comprobante_f001_seq";
-        return jdbc.sql("SELECT nextval('" + secuencia + "')").query(Integer.class).single();
+        if ("B001".equals(serie)) {
+            return jdbc.sql("SELECT nextval('ret_comprobante_b001_seq')").query(Integer.class).single();
+        }
+        return jdbc.sql("SELECT nextval('ret_comprobante_f001_seq')").query(Integer.class).single();
     }
 
     public void guardar(String clave, UUID turno, String tienda, VentaResponse venta,
@@ -73,14 +80,22 @@ public class RegistroVentaRepository {
     }
 
     public Optional<Venta> buscarBoleta(String tienda, int correlativo, boolean bloquear) {
-        String consulta = """
+        if (bloquear) {
+            return jdbc.sql("""
+                    SELECT id_venta, pedido_id, estado_pedido, fecha_emision FROM ret_venta
+                    WHERE tienda_id = ? AND serie = 'B001' AND correlativo = ? FOR UPDATE
+                    """).params(tienda, correlativo).query(this::mapearVenta).optional();
+        }
+        return jdbc.sql("""
                 SELECT id_venta, pedido_id, estado_pedido, fecha_emision FROM ret_venta
                 WHERE tienda_id = ? AND serie = 'B001' AND correlativo = ?
-                """;
-        return jdbc.sql(bloquear ? consulta + " FOR UPDATE" : consulta).params(tienda, correlativo)
-                .query((fila, indice) -> new Venta(fila.getObject("id_venta", UUID.class),
-                        fila.getString("pedido_id"), fila.getString("estado_pedido"),
-                        fila.getObject("fecha_emision", OffsetDateTime.class))).optional();
+                """).params(tienda, correlativo).query(this::mapearVenta).optional();
+    }
+
+    private Venta mapearVenta(ResultSet fila, int indice) throws SQLException {
+        return new Venta(fila.getObject("id_venta", UUID.class),
+                fila.getString("pedido_id"), fila.getString("estado_pedido"),
+                fila.getObject("fecha_emision", OffsetDateTime.class));
     }
 
     public List<Linea> lineas(UUID venta) {
