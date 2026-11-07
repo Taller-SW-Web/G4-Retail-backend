@@ -1,0 +1,20 @@
+name: Develop Continuous Integration
+'on':
+  push:
+    branches:
+    - develop
+permissions:
+  contents: read
+concurrency:
+  group: develop-ci-${{ github.repository }}
+  cancel-in-progress: true
+jobs:
+  integration:
+    name: Build and Test Verification
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-ci.yml@main
+    with:
+      component_name: ms-retail-backend
+      technology: maven
+      sonar_host_url: ${{ vars.SONAR_HOST_URL }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
