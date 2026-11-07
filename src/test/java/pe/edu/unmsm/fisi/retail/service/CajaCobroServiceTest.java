@@ -169,6 +169,36 @@ class CajaCobroServiceTest {
     }
 
     @Test
+    @DisplayName("Una venta confirmada registra su cobro como CONFIRMADO")
+    void ventaConfirmadaRegistraCobroConfirmado() {
+        stubTurno(turno(EstadoCajaSesion.ABIERTA, TIENDA));
+        when(cobroTurnoRepository.findByIdempotencyKey(LLAVE)).thenReturn(Optional.empty());
+
+        CobroTurnoResponse respuesta = cajaService.registrarCobro(USUARIO, TURNO, null,
+                peticion("EFECTIVO", "116.91", "120.00"), EstadoCobroTurno.CONFIRMADO);
+
+        assertThat(respuesta.estado()).isEqualTo("CONFIRMADO");
+    }
+
+    @Test
+    @DisplayName("Si la venta se confirma en un reintento, el cobro pendiente de la misma llave pasa a CONFIRMADO")
+    void reintentoConfirmadoConfirmaElCobroPendiente() {
+        stubTurno(turno(EstadoCajaSesion.ABIERTA, TIENDA));
+        CobroTurno pendiente = cobroExistente(TURNO, EstadoCobroTurno.PENDIENTE_CONFIRMACION);
+        when(cobroTurnoRepository.findByIdempotencyKey(LLAVE)).thenReturn(Optional.of(pendiente));
+        RegistroCobroRequest confirmada = new RegistroCobroRequest(LLAVE, "EFECTIVO", new BigDecimal("116.91"),
+                new BigDecimal("120.00"), "PED-2026-00061", "B001", "00000002");
+
+        CobroTurnoResponse respuesta = cajaService.registrarCobro(USUARIO, TURNO, null, confirmada,
+                EstadoCobroTurno.CONFIRMADO);
+
+        assertThat(respuesta.estado()).isEqualTo("CONFIRMADO");
+        assertThat(respuesta.reutilizado()).isTrue();
+        assertThat(pendiente.getPedidoId()).isEqualTo("PED-2026-00061");
+        verify(cobroTurnoRepository).save(pendiente);
+    }
+
+    @Test
     @DisplayName("Reintentar con la misma llave pero diferente importe o medio de pago responde 409 IDEMPOTENCY_CONFLICT")
     void mismaLlaveConCuerpoDistintoRespondeConflicto() {
         stubTurno(turno(EstadoCajaSesion.ABIERTA, TIENDA));
