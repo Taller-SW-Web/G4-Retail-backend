@@ -10,6 +10,7 @@ import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
 import pe.edu.unmsm.fisi.retail.dto.RegistroCobroRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaRequest;
 import pe.edu.unmsm.fisi.retail.dto.VentaResponse;
+import pe.edu.unmsm.fisi.retail.exception.ConflictoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
@@ -170,6 +171,10 @@ public class VentaService {
                 cajaService.validarAccesoTurno(usuarioId, turnoComoUuid(procesada.solicitud().turnoId()),
                         procesada.solicitud().terminalPos());
             }
+            if (!procesada.solicitud().equals(normalizarSolicitud(request))) {
+                throw new ConflictoException("IDEMPOTENCY_CONFLICT",
+                        "La clave de idempotencia ya fue utilizada con una venta diferente");
+            }
             log.info("Idempotencia activada para llave={}", idempotencyKey);
             return procesada.respuesta();
         }
@@ -273,7 +278,7 @@ public class VentaService {
         }
 
         // 11. Guardar en cache de idempotencia y loguear auditoria (solo si el cobro fue exitoso)
-        cacheIdempotencia.put(idempotencyKey, new VentaProcesada(request, respuesta));
+        cacheIdempotencia.put(idempotencyKey, new VentaProcesada(normalizarSolicitud(request), respuesta));
         if (registroPedidos != null) {
             registroPedidos.registrar(request.comprobante().numeroDocumento(), pedidoId);
         }
@@ -284,6 +289,26 @@ public class VentaService {
     }
 
     // ── Metodos privados de calculo ─────────────────────────────────────────
+
+    /**
+     * Copia inmutable del cuerpo completo para comparar reintentos (§2.3). Solo se normaliza la
+     * escala de los importes: 100 y 100.00 representan el mismo valor JSON.
+     */
+    private VentaRequest normalizarSolicitud(VentaRequest request) {
+        List<VentaRequest.ItemVentaDto> items = request.items().stream()
+                .map(item -> new VentaRequest.ItemVentaDto(item.sku(), item.cantidad(), normalizarMonto(item.precioFinal())))
+                .toList();
+        VentaRequest.PagoDto pago = request.pago();
+        VentaRequest.PagoDto pagoNormalizado = new VentaRequest.PagoDto(pago.medioPago(),
+                normalizarMonto(pago.montoRecibidoEfectivo()), normalizarMonto(pago.montoTarjeta()),
+                pago.referenciaOperacion());
+        return new VentaRequest(request.terminalPos(), request.turnoId(), request.clienteId(), items,
+                pagoNormalizado, request.comprobante(), request.emitirTicketRegalo(), request.cupon(), request.evaluacionId());
+    }
+
+    private BigDecimal normalizarMonto(BigDecimal monto) {
+        return monto == null ? null : monto.stripTrailingZeros();
+    }
 
     /**
      * Valida, contra el mock en memoria, que el turno de caja este abierto antes de procesar la venta.

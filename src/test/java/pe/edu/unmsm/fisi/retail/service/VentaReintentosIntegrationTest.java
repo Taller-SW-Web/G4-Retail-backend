@@ -3,6 +3,8 @@ package pe.edu.unmsm.fisi.retail.service;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -87,6 +89,53 @@ class VentaReintentosIntegrationTest {
 
         vender(VENDEDOR, clave, cuerpo).andExpect(status().isCreated()).andExpect(content().json(original));
         assertThat(cobros.findByIdempotencyKey(clave).orElseThrow().getIdCobro()).isEqualTo(cobroId);
+    }
+
+    @ParameterizedTest(name = "§2.3: reutilizar clave cambiando {0} responde 409")
+    @ValueSource(strings = {"importe", "medioPago", "recibido", "cliente", "documento", "sku",
+            "cantidad", "terminal", "turno", "cupon", "evaluacion", "regalo"})
+    void mismaClaveConOtroCuerpoSeRechaza(String campo) throws Exception {
+        String turnoId = abrirTurno(VENDEDOR);
+        String clave = UUID.randomUUID().toString();
+        String cuerpo = venta(turnoId);
+        vender(VENDEDOR, clave, cuerpo).andExpect(status().isCreated());
+        UUID cobroId = cobros.findByIdempotencyKey(clave).orElseThrow().getIdCobro();
+
+        String otroCuerpo = switch (campo) {
+            case "importe" -> cuerpo.replace("100.00", "200.00");
+            case "medioPago" -> cuerpo.replace("\"medioPago\":\"EFECTIVO\",\"montoRecibidoEfectivo\":100.00",
+                    "\"medioPago\":\"TARJETA_POS\",\"montoTarjeta\":100.00,\"referenciaOperacion\":\"OP-7788\"");
+            case "recibido" -> cuerpo.replace("\"montoRecibidoEfectivo\":100.00", "\"montoRecibidoEfectivo\":150.00");
+            case "cliente" -> cuerpo.replace("\"items\":", "\"clienteId\":\"cliente-otro\",\"items\":");
+            case "documento" -> cuerpo.replace("\"tipo\":\"BOLETA\"", "\"tipo\":\"BOLETA\",\"numeroDocumento\":\"12345678\"");
+            case "sku" -> cuerpo.replace("SKU-POLO", "SKU-CASACA");
+            case "cantidad" -> cuerpo.replace("\"cantidad\":1", "\"cantidad\":2");
+            case "terminal" -> cuerpo.replace(TERMINAL, "POS-OTRA");
+            case "turno" -> cuerpo.replace(turnoId, UUID.randomUUID().toString());
+            case "cupon" -> cuerpo.replace("\"items\":", "\"cupon\":\"OTRO\",\"items\":");
+            case "evaluacion" -> cuerpo.replace("\"items\":", "\"evaluacionId\":\"EVAL-OTRA\",\"items\":");
+            case "regalo" -> cuerpo.replace("\"emitirTicketRegalo\":false", "\"emitirTicketRegalo\":true");
+            default -> throw new IllegalArgumentException("Campo de prueba desconocido: " + campo);
+        };
+
+        vender(VENDEDOR, clave, otroCuerpo)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+        assertThat(cobros.findByIdempotencyKey(clave).orElseThrow().getIdCobro()).isEqualTo(cobroId);
+        assertThat(cobros.findByIdempotencyKey(clave).orElseThrow().getMontoTotal()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    @DisplayName("§2.3: importes numéricamente iguales devuelven el resultado original sin duplicar cobros")
+    void mismaVentaConDistintaEscalaDecimalDevuelveOriginal() throws Exception {
+        String turnoId = abrirTurno(VENDEDOR);
+        String clave = UUID.randomUUID().toString();
+        String cuerpo = venta(turnoId);
+        String original = vender(VENDEDOR, clave, cuerpo).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        vender(VENDEDOR, clave, cuerpo.replace("100.00", "100"))
+                .andExpect(status().isCreated()).andExpect(content().json(original));
     }
 
     private String abrirTurno(String usuario) throws Exception {
