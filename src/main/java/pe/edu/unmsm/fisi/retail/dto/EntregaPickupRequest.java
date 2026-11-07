@@ -5,16 +5,16 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * Cuerpo de {@code POST /api/v1/retail/pedidos/{pedidoId}/entrega} (RF-19).
+ * Cuerpo de {@code POST /api/v1/retail/pickup/{pedidoId}/entrega} (RF-19).
  *
  * <p>Solo trae lo que el vendedor verifica en mostrador. La tienda y el encargado de la entrega no
- * viajan aquí: el backend los toma del token. El documento de reparto de la Semana 8 lo lista como
- * {@code EntregaPickupRequest}.</p>
+ * viajan aquí: el backend los toma del token.</p>
  *
- * @param dniRecoge           DNI de quien retira el paquete (8 dígitos)
- * @param nombreRecoge        nombres completos de quien retira
- * @param esTerceroAutorizado {@code true} si no es el titular de la compra
- * @param codigoRetiro        código de 6 caracteres que el cliente recibió al comprar (contrato §5.7)
+ * @param dniRecoge            DNI de quien retira el paquete (8 dígitos)
+ * @param nombreRecoge         nombres completos de quien retira
+ * @param esTerceroAutorizado  {@code true} si no es el titular de la compra
+ * @param codigoRetiro         código de 6 caracteres del cliente; opcional, Ventas no lo exige
+ * @param cartaPoderVerificada {@code true} si el vendedor revisó la carta poder; obligatorio para terceros
  */
 public record EntregaPickupRequest(
 
@@ -28,7 +28,8 @@ public record EntregaPickupRequest(
 
         boolean esTerceroAutorizado,
 
-        @NotBlank(message = "El código de retiro es obligatorio")
-        @Pattern(regexp = "^[A-Z0-9]{6}$", message = "El código de retiro debe tener 6 caracteres alfanuméricos")
-        String codigoRetiro) {
+        @Pattern(regexp = "^([A-Z0-9]{6})?$", message = "El código de retiro debe tener 6 caracteres alfanuméricos")
+        String codigoRetiro,
+
+        Boolean cartaPoderVerificada) {
 }
