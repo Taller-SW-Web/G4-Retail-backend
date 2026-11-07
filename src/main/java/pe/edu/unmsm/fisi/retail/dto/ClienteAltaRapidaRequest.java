@@ -28,12 +28,21 @@ public record ClienteAltaRapidaRequest(
         @NotBlank(message = "El campo apellidos es obligatorio")
         String apellidos,
 
-        /** Opcional; si llega, debe tener arroba y un dominio con punto (RF-09). */
-        @Pattern(regexp = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+        /**
+         * Opcional; si llega, se valida su sintaxis (RF-09). La parte local no admite puntos
+         * consecutivos ni al inicio o al final. El dominio son etiquetas alfanumericas (con guion
+         * interno) separadas por un solo punto, y termina en un TLD de al menos 2 letras. Asi se
+         * rechazan {@code rosa@correo..com}, {@code rosa@.correo.com} o {@code rosa@correo.c}.
+         */
+        @Pattern(regexp = ClienteAltaRapidaRequest.PATRON_EMAIL,
                 message = "El campo email no tiene un formato de correo valido")
         String email,
 
         String telefono
 
 ) {
+
+    /** Sintaxis de correo aceptada en el alta rapida; la SPA usa la misma en {@code lib/documento.ts}. */
+    public static final String PATRON_EMAIL =
+            "^[^\\s@.]+(\\.[^\\s@.]+)*@([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,}$";
 }

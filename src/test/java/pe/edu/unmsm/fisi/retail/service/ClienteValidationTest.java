@@ -271,6 +271,53 @@ class ClienteValidationTest {
                     .andExpect(jsonPath("$.code").value("DATO_INVALIDO"));
         }
 
+        private String altaConEmail(String email) {
+            return """
+                    {"tipoDocumento":"DNI","numeroDocumento":"45678912",
+                     "nombres":"Rosa","apellidos":"Huaman","email":"%s"}
+                    """.formatted(email);
+        }
+
+        @ParameterizedTest(name = "POST con email \"{0}\" responde 400")
+        @ValueSource(strings = {
+                "rosa@correo..com",     // puntos consecutivos en el dominio
+                "rosa@.correo.com",     // dominio que empieza con punto
+                "rosa@correo.com.",     // dominio que termina en punto
+                "rosa@-correo.com",     // etiqueta que empieza con guion
+                "rosa@correo-.com",     // etiqueta que termina en guion
+                "rosa@correo.c",        // TLD de una letra
+                "rosa@correo.c0m",      // TLD con digitos
+                "rosa@correo",          // dominio sin punto
+                "rosa..huaman@correo.com", // puntos consecutivos en la parte local
+                ".rosa@correo.com",     // parte local que empieza con punto
+                "rosa.@correo.com",     // parte local que termina en punto
+                "rosa@@correo.com",     // doble arroba
+                "rosa huaman@correo.com", // espacio
+                "rosa@correo .com"
+        })
+        void altaConEmailInvalidoResponde400(String email) throws Exception {
+            mockMvc.perform(post("/api/v1/retail/clientes")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(altaConEmail(email)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("PARAMETRO_INVALIDO"))
+                    .andExpect(jsonPath("$.errores[0].campo").value("email"));
+        }
+
+        @ParameterizedTest(name = "POST con email \"{0}\" responde 201")
+        @ValueSource(strings = {
+                "rosa@correo.com",
+                "rosa.huaman@correo.com.pe",
+                "rosa+tienda@mi-correo.pe",
+                "r_h-2026@sub.dominio.org"
+        })
+        void altaConEmailValidoResponde201(String email) throws Exception {
+            mockMvc.perform(post("/api/v1/retail/clientes")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(altaConEmail(email)))
+                    .andExpect(status().isCreated());
+        }
+
         @Test
         @DisplayName("POST con pasaporte valido responde 201")
         void altaConPasaporteValidoResponde201() throws Exception {
