@@ -1,6 +1,5 @@
 package pe.edu.unmsm.fisi.retail.integracion.ventas;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -14,9 +13,6 @@ public interface PedidosVentasPort {
 
     /** G5: {@code GET /api/v1/pedidos/{pedidoId}}. Vacío si Ventas no conoce el pedido. */
     Optional<PedidoVentas> consultar(String pedidoId);
-
-    /** Pedidos del comprador con ese DNI o RUC, en cualquier orden. */
-    List<PedidoVentas> buscarPorDocumento(String documento);
 
     /** Nombre corto de la fuente de datos, para los logs: {@code VENTAS_G5} o {@code EN_MEMORIA}. */
     String origen();

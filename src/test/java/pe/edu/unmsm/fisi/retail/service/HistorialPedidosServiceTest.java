@@ -10,6 +10,7 @@ import pe.edu.unmsm.fisi.retail.exception.ParametroInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidosVentasPort;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -28,13 +29,15 @@ import static org.mockito.Mockito.when;
 class HistorialPedidosServiceTest {
 
     private PedidosVentasPort ventas;
+    private RegistroPedidosMostrador registro;
     private HistorialPedidosService servicio;
 
     @BeforeEach
     void preparar() {
         ventas = mock(PedidosVentasPort.class);
         when(ventas.origen()).thenReturn("PRUEBA");
-        servicio = new HistorialPedidosService(ventas);
+        registro = new RegistroPedidosMostrador();
+        servicio = new HistorialPedidosService(ventas, registro);
     }
 
     private static PedidoVentas pedido(String id, String creado, String estado, List<PedidoVentas.Historial> historial) {
@@ -46,13 +49,21 @@ class HistorialPedidosServiceTest {
                 creado, creado, historial);
     }
 
+    /** Simula ventas hechas en este mostrador: quedan en el registro y Ventas las conoce. */
+    private void vendidosEnEstaEjecucion(PedidoVentas... pedidos) {
+        for (PedidoVentas p : pedidos) {
+            registro.registrar(p.contacto().numeroDocumento(), p.pedidoId());
+            when(ventas.consultar(p.pedidoId())).thenReturn(Optional.of(p));
+        }
+    }
+
     @Test
     @DisplayName("RF-16: por DNI lista los pedidos del más reciente al más antiguo")
     void porDocumentoOrdenaDescendente() {
-        when(ventas.buscarPorDocumento("72345678")).thenReturn(List.of(
+        vendidosEnEstaEjecucion(
                 pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "ENTREGADO", List.of()),
                 pedido("PED-2026-00003", "2026-11-05T10:00:00Z", "PAGADO", List.of()),
-                pedido("PED-2026-00002", "2026-10-20T10:00:00Z", "ANULADO", List.of())));
+                pedido("PED-2026-00002", "2026-10-20T10:00:00Z", "ANULADO", List.of()));
 
         PaginaPedidosResponse pagina = servicio.buscar(null, "72345678", 0, 20);
 
@@ -67,7 +78,7 @@ class HistorialPedidosServiceTest {
     @DisplayName("RF-16: por código devuelve el pedido con la fecha en hora de Lima")
     void porCodigo() {
         when(ventas.consultar("PED-2026-00412"))
-                .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of())));
+                .thenReturn(Optional.of(pedido("PED-2026-00412", "2026-11-06T15:30:00Z", "PAGADO", List.of()));
 
         PaginaPedidosResponse pagina = servicio.buscar("PED-2026-00412", null, 0, 20);
 
@@ -123,10 +134,10 @@ class HistorialPedidosServiceTest {
     @Test
     @DisplayName("Pagina el resultado con page desde 0")
     void pagina() {
-        when(ventas.buscarPorDocumento("72345678")).thenReturn(List.of(
+        vendidosEnEstaEjecucion(
                 pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "ENTREGADO", List.of()),
                 pedido("PED-2026-00002", "2026-10-02T10:00:00Z", "ENTREGADO", List.of()),
-                pedido("PED-2026-00003", "2026-10-03T10:00:00Z", "ENTREGADO", List.of())));
+                pedido("PED-2026-00003", "2026-10-03T10:00:00Z", "ENTREGADO", List.of()));
 
         PaginaPedidosResponse segunda = servicio.buscar(null, "72345678", 1, 2);
 
@@ -176,5 +187,26 @@ class HistorialPedidosServiceTest {
 
         assertThatThrownBy(() -> servicio.detalle("PED-2026-99999"))
                 .isInstanceOf(RecursoNoEncontradoException.class);
+    }
+
+    @Test
+    @DisplayName("Por DNI no busca el histórico: un pedido no vendido en esta ejecución da 404")
+    void porDocumentoSoloVentasDeEstaEjecucion() {
+        when(ventas.consultar("PED-2026-00001")).thenReturn(Optional.of(
+                pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "ENTREGADO", List.of())));
+
+        assertThatThrownBy(() -> servicio.buscar(null, "72345678", 0, 20))
+                .isInstanceOf(RecursoNoEncontradoException.class);
+    }
+
+    @Test
+    @DisplayName("Por DNI omite las ventas registradas que Ventas ya no conoce")
+    void porDocumentoOmiteLasQueVentasNoConoce() {
+        vendidosEnEstaEjecucion(pedido("PED-2026-00412", "2026-11-05T10:00:00Z", "PAGADO", List.of()));
+        registro.registrar("72345678", "VNT-20261106-00001");
+        when(ventas.consultar("VNT-20261106-00001")).thenReturn(Optional.empty());
+
+        assertThat(servicio.buscar(null, "72345678", 0, 20).items())
+                .extracting(PedidoResumenDto::pedidoId).containsExactly("PED-2026-00412");
     }
 }

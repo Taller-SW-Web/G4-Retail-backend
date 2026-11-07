@@ -57,13 +57,6 @@ public class PedidosVentasEnMemoria implements PedidosVentasPort {
     }
 
     @Override
-    public List<PedidoVentas> buscarPorDocumento(String documento) {
-        return pedidos.values().stream()
-                .filter(p -> documento != null && documento.equals(p.contacto().numeroDocumento()))
-                .toList();
-    }
-
-    @Override
     public String origen() {
         return "EN_MEMORIA";
     }

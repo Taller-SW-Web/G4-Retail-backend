@@ -26,8 +26,7 @@ public class PedidosVentasConfig {
             @Value("${retail.integracion.ventas.pedidos.modo:auto}") String modo,
             @Value("${retail.integracion.ventas.url:https://g5-servicio-ventas.onrender.com}") String urlVentas,
             @Value("${retail.integracion.ventas.pedidos.timeout-ms:20000}") int timeoutMs,
-            TokenServicioG7 tokenServicio,
-            RegistroPedidosMostrador registro) {
+            TokenServicioG7 tokenServicio) {
 
         boolean usarVentas = switch (modo.trim().toLowerCase()) {
             case "g5" -> true;
@@ -47,6 +46,6 @@ public class PedidosVentasConfig {
 
         log.info("Consulta de pedidos (F6) conectada a Ventas (G5): url={} timeoutMs={}", urlVentas, timeoutMs);
         return new PedidosVentasHttp(RestClient.builder().baseUrl(urlVentas).requestFactory(fabrica).build(),
-                tokenServicio, registro);
+                tokenServicio);
     }
 }

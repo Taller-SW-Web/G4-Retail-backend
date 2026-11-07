@@ -11,7 +11,6 @@ import org.springframework.web.client.RestClient;
 import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,7 +42,6 @@ class PedidosVentasHttpTest {
             """;
 
     private MockRestServiceServer servidor;
-    private RegistroPedidosMostrador registro;
     private PedidosVentasHttp adaptador;
 
     @BeforeEach
@@ -52,8 +50,7 @@ class PedidosVentasHttpTest {
         servidor = MockRestServiceServer.bindTo(builder).build();
         TokenServicioG7 token = mock(TokenServicioG7.class);
         when(token.obtener()).thenReturn("token-de-servicio");
-        registro = new RegistroPedidosMostrador();
-        adaptador = new PedidosVentasHttp(builder.build(), token, registro);
+        adaptador = new PedidosVentasHttp(builder.build(), token);
     }
 
     @Test
@@ -105,28 +102,5 @@ class PedidosVentasHttpTest {
         assertThatThrownBy(() -> adaptador.consultar("PED-2026-00412"))
                 .isInstanceOf(ServicioExternoNoDisponibleException.class)
                 .extracting("codigo").isEqualTo("VENTAS_NO_DISPONIBLE");
-    }
-
-    @Test
-    @DisplayName("Por documento consulta en G5 cada pedido registrado y omite los que G5 ya no conoce")
-    void buscaPorDocumentoConElRegistroLocal() {
-        registro.registrar("72345678", "PED-2026-00412");
-        registro.registrar("72345678", "VNT-20261106-00001");
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos/PED-2026-00412"))
-                .andRespond(withSuccess(PEDIDO_G5, MediaType.APPLICATION_JSON));
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos/VNT-20261106-00001"))
-                .andRespond(withStatus(HttpStatus.NOT_FOUND));
-
-        List<PedidoVentas> pedidos = adaptador.buscarPorDocumento("72345678");
-
-        assertThat(pedidos).extracting(PedidoVentas::pedidoId).containsExactly("PED-2026-00412");
-        servidor.verify();
-    }
-
-    @Test
-    @DisplayName("Un documento sin pedidos registrados no llama a G5")
-    void documentoSinPedidos() {
-        assertThat(adaptador.buscarPorDocumento("40404040")).isEmpty();
-        servidor.verify();
     }
 }

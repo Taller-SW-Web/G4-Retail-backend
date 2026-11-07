@@ -13,6 +13,7 @@ import pe.edu.unmsm.fisi.retail.exception.ParametroInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidosVentasPort;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -26,14 +27,18 @@ import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
  * Consulta y seguimiento histórico de pedidos (F6): RF-16 y RF-17.
  *
  * <p>Los pedidos y su historial son de Ventas (G5); aquí solo se filtran, se ordenan y se pasan a la
- * hora de Lima. Por código se consulta el pedido directo en Ventas; por DNI/RUC, los pedidos que el
- * puerto encuentra para ese documento.</p>
+ * hora de Lima. Por código se consulta el pedido directo en Ventas.</p>
+ *
+ * <p>Por DNI/RUC solo se buscan las ventas registradas en este mostrador durante la ejecución actual
+ * del servicio ({@link RegistroPedidosMostrador}). El histórico completo es RF-16-DOC (spec F6 §3.1),
+ * pendiente del acuerdo de acceso con G5.</p>
  */
 @Slf4j
 @Service
@@ -45,9 +50,11 @@ public class HistorialPedidosService {
     private static final int TAMANO_MAXIMO = 100;
 
     private final PedidosVentasPort ventas;
+    private final RegistroPedidosMostrador registro;
 
     /**
-     * RF-16: pedidos por código o por documento, del más reciente al más antiguo.
+     * RF-16: pedidos por código o por documento, del más reciente al más antiguo. Por documento solo
+     * entran las ventas de esta ejecución, con su estado actual en Ventas.
      *
      * @throws ParametroInvalidoException   sin filtros, con documento mal formado o con paginación fuera de rango
      * @throws RecursoNoEncontradoException {@code PEDIDO_NO_ENCONTRADO} si no hay ningún pedido
@@ -75,7 +82,10 @@ public class HistorialPedidosService {
                 ? ventas.consultar(codigo).stream()
                     .filter(p -> documento == null || documento.equals(documentoDe(p)))
                     .toList()
-                : ventas.buscarPorDocumento(documento);
+                : registro.pedidosDe(documento).stream()
+                    .map(ventas::consultar)
+                    .flatMap(Optional::stream)
+                    .toList();
 
         if (encontrados.isEmpty()) {
             throw new RecursoNoEncontradoException("PEDIDO_NO_ENCONTRADO",

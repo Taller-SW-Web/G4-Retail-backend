@@ -14,11 +14,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Existe porque G5 no deja listar pedidos con el token de servicio de Retail: el listado
  * ({@code GET /api/v1/pedidos}) es solo para el rol {@code ADMIN_VENTAS}, y el scope
  * {@code ventas:pedidos:consultar} solo sirve para leer un pedido por su id. Por eso la búsqueda por
- * DNI/RUC sale de aquí y el detalle actualizado se pide a G5 pedido por pedido.</p>
+ * DNI/RUC sale de aquí y el estado actual se pide a G5 pedido por pedido.</p>
  *
- * <p>Vive en memoria: se pierde al reiniciar el servicio. Cuando el registro de ventas en base de
- * datos ({@code RET_VENTA}) esté en {@code develop}, este índice puede leerse de ahí sin cambiar el
- * puerto.</p>
+ * <p>Vive en memoria: solo cubre las ventas de la ejecución actual y se pierde al reiniciar. No es el
+ * histórico del cliente; ese es RF-16-DOC (spec F6 §3.1), pendiente del acuerdo de acceso con G5.</p>
  */
 @Component
 public class RegistroPedidosMostrador {

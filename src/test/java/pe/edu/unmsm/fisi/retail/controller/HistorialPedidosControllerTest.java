@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
 
 import static org.hamcrest.Matchers.endsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -31,6 +32,9 @@ class HistorialPedidosControllerTest {
     @Autowired
     private MockMvc mvc;
 
+    @Autowired
+    private RegistroPedidosMostrador registro;
+
     private static RequestPostProcessor conToken() {
         return jwt().jwt(t -> t.subject("bbbbbbbb-0000-0000-0000-000000000001"));
     }
@@ -43,8 +47,12 @@ class HistorialPedidosControllerTest {
     }
 
     @Test
-    @DisplayName("RF-16: por DNI lista los pedidos del cliente del más reciente al más antiguo")
+    @DisplayName("RF-16: por DNI lista las ventas de esta ejecución del más reciente al más antiguo")
     void porDniListaOrdenado() throws Exception {
+        registro.registrar("72345678", "PED-2026-00377");
+        registro.registrar("72345678", "PED-2026-00412");
+        registro.registrar("72345678", "PED-2026-00398");
+
         mvc.perform(get(RUTA).param("documentoCliente", "72345678").with(conToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(3))
@@ -55,6 +63,14 @@ class HistorialPedidosControllerTest {
                 .andExpect(jsonPath("$.items[2].pedidoId").value("PED-2026-00377"))
                 .andExpect(jsonPath("$.items[0].estadoComercial").value("ENTREGADO"))
                 .andExpect(jsonPath("$.items[0].fechaCreacion").value(endsWith("-05:00")));
+    }
+
+    @Test
+    @DisplayName("Por DNI/RUC no busca el histórico: sin ventas en esta ejecución responde 404")
+    void porDocumentoSinVentasEnEstaEjecucion() throws Exception {
+        mvc.perform(get(RUTA).param("documentoCliente", "20123456789").with(conToken()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PEDIDO_NO_ENCONTRADO"));
     }
 
     @Test

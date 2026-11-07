@@ -9,15 +9,13 @@ import org.springframework.web.client.RestClientResponseException;
 import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
  * Adaptador HTTP real hacia Ventas (G5) para la consulta de pedidos (F6).
  *
  * <p>Cada llamada lleva {@code Authorization: Bearer} con el token de servicio de Seguridad (G7);
- * G5 exige el scope {@code ventas:pedidos:consultar}. La búsqueda por documento usa el
- * {@link RegistroPedidosMostrador} y pide a G5 el estado actual de cada pedido.</p>
+ * G5 exige el scope {@code ventas:pedidos:consultar}.</p>
  *
  * <p>Un {@code 404} (o {@code 400} por un id mal formado) se lee como "no existe". Un {@code 401} o
  * {@code 403} es {@code 503 VENTAS_CREDENCIAL_RECHAZADA}; una caída, un timeout o un {@code 5xx},
@@ -28,12 +26,10 @@ public class PedidosVentasHttp implements PedidosVentasPort {
 
     private final RestClient restClient;
     private final TokenServicioG7 tokenServicio;
-    private final RegistroPedidosMostrador registro;
 
-    public PedidosVentasHttp(RestClient restClient, TokenServicioG7 tokenServicio, RegistroPedidosMostrador registro) {
+    public PedidosVentasHttp(RestClient restClient, TokenServicioG7 tokenServicio) {
         this.restClient = restClient;
         this.tokenServicio = tokenServicio;
-        this.registro = registro;
     }
 
     @Override
@@ -61,14 +57,6 @@ public class PedidosVentasHttp implements PedidosVentasPort {
             log.warn("Ventas (G5) no respondió al consultar el pedido {}: {}", pedidoId, e.getMessage());
             throw noDisponible();
         }
-    }
-
-    @Override
-    public List<PedidoVentas> buscarPorDocumento(String documento) {
-        return registro.pedidosDe(documento).stream()
-                .map(this::consultar)
-                .flatMap(Optional::stream)
-                .toList();
     }
 
     @Override
