@@ -113,3 +113,9 @@ El endpoint de verificación de salud para Railway/Render está disponible públ
 `main` es la entrega formal y no recibe commits directos. Todo PR apunta a `develop`. El trabajo
 diario va en `feat/`, `fix/`, `docs/` o `infra/`.
 
+
+## Revision automatica de seguridad
+
+Los PR hacia `develop` publican un resumen de SonarQube, GHAS SAST (CodeQL) y GHAS SCA
+en GitHub Actions y en un comentario del PR. Los analisis son informativos en `develop`
+y obligatorios al promover desde `develop` hacia `main`.

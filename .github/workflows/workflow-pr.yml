@@ -1,0 +1,26 @@
+name: Pull Request Security Review
+run-name: CI | ${{ github.event.pull_request.head.ref || github.ref_name }} -> ${{ github.base_ref || github.ref_name }}
+'on':
+  pull_request:
+    branches:
+    - develop
+    - main
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+  pull-requests: write
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    name: Security Analysis
+    uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-pr-analysis.yml@eee89429526f60fd9b91f65b334c2332451daeb9
+    with:
+      component_name: ms-retail-backend
+      technology: maven
+      language: java
+      sonar_host_url: ${{ vars.SONAR_HOST_URL }}
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
