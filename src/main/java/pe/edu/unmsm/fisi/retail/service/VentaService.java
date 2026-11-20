@@ -110,6 +110,9 @@ public class VentaService {
     /** Flag de integracion habilitada con Ventas G5. */
     private final boolean ventasHabilitado;
 
+    /** Traduce la tienda del perfil al código TIENDA-... que exige Ventas (R5, D-05). */
+    private final CodigosSucursal codigosSucursal;
+
     /** Contador del correlativo de boleta (persistencia en memoria para tests sin base). */
     private final AtomicInteger correlativoBoleta = new AtomicInteger(1);
     private final AtomicInteger correlativoFactura = new AtomicInteger(1);
@@ -131,27 +134,27 @@ public class VentaService {
 
     /** Constructor sin argumentos para compatibilidad con tests unitarios existentes. */
     public VentaService() {
-        this(null, null, null, null, null, null, null, null, null, null, true);
+        this(null, null, null, null, null, null, null, null, null, null, true, null);
     }
 
     /** Constructor con el cliente de Ventas, sin caja ni registro de pedidos (tests de F5). */
     public VentaService(VentasClient ventasClient) {
-        this(ventasClient, null, null, null, null, null, null, null, null, null, true);
+        this(ventasClient, null, null, null, null, null, null, null, null, null, true, null);
     }
 
     /** Constructor con el servicio de caja, sin registro de pedidos (tests de F8). */
     public VentaService(VentasClient ventasClient, CajaService cajaService) {
-        this(ventasClient, cajaService, null, null, null, null, null, null, null, null, true);
+        this(ventasClient, cajaService, null, null, null, null, null, null, null, null, true, null);
     }
 
     /** Constructor con el registro de pedidos, sin servicio de caja (tests de F6). */
     public VentaService(VentasClient ventasClient, RegistroPedidosMostrador registroPedidos) {
-        this(ventasClient, null, registroPedidos, null, null, null, null, null, null, null, true);
+        this(ventasClient, null, registroPedidos, null, null, null, null, null, null, null, true, null);
     }
 
     /** Constructor con caja y registro de pedidos. */
     public VentaService(VentasClient ventasClient, CajaService cajaService, RegistroPedidosMostrador registroPedidos) {
-        this(ventasClient, cajaService, registroPedidos, null, null, null, null, null, null, null, true);
+        this(ventasClient, cajaService, registroPedidos, null, null, null, null, null, null, null, true, null);
     }
 
     /** Constructor principal con inyección opcional de dependencias. */
@@ -167,7 +170,8 @@ public class VentaService {
             @Autowired(required = false) EntityManager entityManager,
             @Autowired(required = false) ObjectMapper objectMapper,
             @Autowired(required = false) TransactionTemplate transactionTemplate,
-            @Value("${retail.integracion.ventas.habilitado:true}") boolean ventasHabilitado
+            @Value("${retail.integracion.ventas.habilitado:true}") boolean ventasHabilitado,
+            @Autowired(required = false) CodigosSucursal codigosSucursal
     ) {
         this.ventasClient = ventasClient;
         this.cajaService = cajaService;
@@ -180,6 +184,12 @@ public class VentaService {
         this.json = objectMapper != null ? objectMapper : new ObjectMapper().findAndRegisterModules();
         this.transaccion = transactionTemplate;
         this.ventasHabilitado = ventasHabilitado;
+        this.codigosSucursal = codigosSucursal;
+    }
+
+    /** Constructor con el cliente de Ventas y la tabla de códigos de sucursal (tests de R5). */
+    public VentaService(VentasClient ventasClient, CodigosSucursal codigosSucursal) {
+        this(ventasClient, null, null, null, null, null, null, null, null, null, true, codigosSucursal);
     }
 
     // ── API publica ──────────────────────────────────────────────────────────
@@ -633,7 +643,7 @@ public class VentaService {
                 "Miraflores",
                 "Tienda Mostrador",
                 request.terminalPos(),
-                tiendaId
+                codigosSucursal != null ? codigosSucursal.codigoDe(tiendaId) : tiendaId
         );
 
         String medioPago = request.pago().medioPago();

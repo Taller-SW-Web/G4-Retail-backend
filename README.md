@@ -108,6 +108,15 @@ El backend cuenta con soporte para despliegue automatizado en Railway y Render m
 
 El endpoint de verificación de salud para Railway/Render está disponible públicamente en `GET /api/v1/retail/health`.
 
+### Documentación de la API
+
+La documentación interactiva se publica con springdoc y no requiere token:
+
+- Swagger UI: `/swagger-ui.html` (en producción, `https://g4-retail-backend-production.up.railway.app/swagger-ui.html`).
+- OpenAPI en JSON: `/v3/api-docs`.
+
+Las operaciones de negocio exigen el JWT de acceso que emite Seguridad (G7), documentado como el esquema `bearerG7`.
+
 ## Ramas
 
 `main` es la entrega formal y no recibe commits directos. Todo PR apunta a `develop`. El trabajo
