@@ -14,6 +14,7 @@ import pe.edu.unmsm.fisi.retail.dto.SincronizacionOfflineRequest.VentaOffline;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
+import pe.edu.unmsm.fisi.retail.service.CodigosSucursal;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -27,16 +28,19 @@ public class ContingenciaVentasHttp implements ContingenciaVentasPort {
 
     private final RestClient http;
     private final TokenServicioG7 token;
+    private final CodigosSucursal codigosSucursal;
 
     public ContingenciaVentasHttp(
             @Value("${retail.integracion.ventas.url:https://g5-servicio-ventas.onrender.com}") String base,
             @Value("${retail.integracion.ventas.timeout-ms:3500}") int timeout,
-            TokenServicioG7 token) {
+            TokenServicioG7 token,
+            CodigosSucursal codigosSucursal) {
         SimpleClientHttpRequestFactory fabrica = new SimpleClientHttpRequestFactory();
         fabrica.setConnectTimeout(Duration.ofMillis(timeout));
         fabrica.setReadTimeout(Duration.ofMillis(timeout));
         this.http = RestClient.builder().baseUrl(base).requestFactory(fabrica).build();
         this.token = token;
+        this.codigosSucursal = codigosSucursal;
     }
 
     @Override
@@ -74,7 +78,7 @@ public class ContingenciaVentasHttp implements ContingenciaVentasPort {
                 "Miraflores",
                 "Tienda Mostrador",
                 "CONTINGENCIA",
-                tienda != null ? tienda : "TIENDA-MIRAFLORES"
+                tienda != null ? codigosSucursal.codigoDe(tienda) : "TIENDA-MIRAFLORES"
         );
 
         OffsetDateTime fechaOffline;
