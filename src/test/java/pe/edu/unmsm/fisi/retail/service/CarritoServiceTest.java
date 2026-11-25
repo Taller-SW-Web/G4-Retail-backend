@@ -117,6 +117,36 @@ class CarritoServiceTest {
                     .isInstanceOf(ReglaNegocioException.class)
                     .hasMessageContaining("al menos un item");
         }
+
+        @Test
+        @DisplayName("RF-11: quitar el cupón restablece los importes de todas las prendas")
+        void quitarCuponRestableceImportes() {
+            var prendas = List.of(item("POLO-M", 2, "50.00"), item("GORRA-U", 1, "18.00"));
+            var conCupon = servicio.calcularTotales(new CalculoCarritoRequest(prendas, "VERANO2026"));
+            var sinCupon = servicio.calcularTotales(new CalculoCarritoRequest(prendas, null));
+
+            assertThat(conCupon.totalPagar()).isEqualByComparingTo("106.20");
+            assertThat(sinCupon.totalPagar()).isEqualByComparingTo("118.00");
+            assertThat(sinCupon.descuentoTotal()).isEqualByComparingTo("0.00");
+            assertThat(sinCupon.baseImponible()).isEqualByComparingTo("100.00");
+            assertThat(sinCupon.montoIgv()).isEqualByComparingTo("18.00");
+            assertThat(sinCupon.lineas()).allSatisfy(linea ->
+                    assertThat(linea.descuento()).isEqualByComparingTo("0.00"));
+        }
+
+        @Test
+        @DisplayName("RF-12: suma cantidades de varias prendas y conserva la conciliación al centavo")
+        void variasPrendasConcilianTotalEImpuesto() {
+            var respuesta = servicio.calcularTotales(new CalculoCarritoRequest(
+                    List.of(item("POLO-M", 3, "19.99"), item("GORRA-U", 2, "10.01")), null));
+
+            assertThat(respuesta.subtotalBruto()).isEqualByComparingTo("79.99");
+            assertThat(respuesta.totalPagar()).isEqualByComparingTo("79.99");
+            assertThat(respuesta.baseImponible()).isEqualByComparingTo("67.79");
+            assertThat(respuesta.montoIgv()).isEqualByComparingTo("12.20");
+            assertThat(respuesta.baseImponible().add(respuesta.montoIgv()))
+                    .isEqualByComparingTo(respuesta.totalPagar());
+        }
     }
 
     @Nested
