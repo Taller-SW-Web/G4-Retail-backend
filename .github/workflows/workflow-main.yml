@@ -4,8 +4,6 @@ run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }}
   push:
     branches:
     - main
-    paths-ignore:
-    - '.github/**'
   workflow_dispatch:
     inputs:
       rollback:
@@ -16,7 +14,13 @@ permissions:
   contents: write
   actions: read
 jobs:
+  evidence:
+    name: Evidencias de integración S14
+    if: ${{ !inputs.rollback }}
+    uses: ./.github/workflows/workflow-evidence.yml
   delivery:
+    needs: evidence
+    if: ${{ !cancelled() && (needs.evidence.result == 'success' || inputs.rollback) }}
     name: Despliegue a producción
     uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-deploy.yml@main
     with:
