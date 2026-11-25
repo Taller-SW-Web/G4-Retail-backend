@@ -91,7 +91,8 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.14</version>
+                <!-- Misma versión que la plantilla CI para evitar dos agentes simultáneos. -->
+                <version>0.8.13</version>
                 <executions>
                     <execution>
                         <goals><goal>prepare-agent</goal></goals>
