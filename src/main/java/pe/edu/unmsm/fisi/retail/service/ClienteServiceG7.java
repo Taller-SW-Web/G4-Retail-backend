@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.service;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -42,7 +43,8 @@ public class ClienteServiceG7 implements ClienteService {
     public ClienteServiceG7(
             @Value("${retail.integracion.g7.usuarios-url:https://g7-auth-service.onrender.com}") String url,
             @Value("${retail.integracion.g7.timeout-ms:20000}") int timeoutMs) {
-        this(new ClientesG7Http(RestClient.builder().baseUrl(url).requestFactory(fabrica(timeoutMs)).build()));
+        this(new ClientesG7Http(RestClient.builder().baseUrl(url).requestFactory(fabrica(timeoutMs))
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build()));
         log.info("Clientes (F3) conectados a Seguridad (G7): url={}", url);
     }
 

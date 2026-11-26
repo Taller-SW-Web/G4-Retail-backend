@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.productos;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -44,7 +45,8 @@ public class ProductosG6Config {
         this.fabrica = new SimpleClientHttpRequestFactory();
         fabrica.setConnectTimeout(Duration.ofMillis(timeoutMs));
         fabrica.setReadTimeout(Duration.ofMillis(timeoutMs));
-        this.token = new TokenServicioG7(RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica).build(),
+        this.token = new TokenServicioG7(RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(),
                 clientId, clientSecret, audiencia, Clock.systemUTC());
         log.info("Productos (G6) real: url={} audiencia={}", url, audiencia);
     }
@@ -60,6 +62,7 @@ public class ProductosG6Config {
     }
 
     private RestClient cliente() {
-        return RestClient.builder().baseUrl(url).requestFactory(fabrica).build();
+        return RestClient.builder().baseUrl(url).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build();
     }
 }

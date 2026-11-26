@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.productos;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,8 +31,10 @@ public class CampanasG6Config {
         SimpleClientHttpRequestFactory fabrica = new SimpleClientHttpRequestFactory();
         fabrica.setConnectTimeout(Duration.ofMillis(timeoutMs));
         fabrica.setReadTimeout(Duration.ofMillis(timeoutMs));
-        TokenServicioG7 token = new TokenServicioG7(RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica).build(),
+        TokenServicioG7 token = new TokenServicioG7(RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(),
                 clientId, clientSecret, audiencia, Clock.systemUTC());
-        return new CampanasHttp(RestClient.builder().baseUrl(url).requestFactory(fabrica).build(), token);
+        return new CampanasHttp(RestClient.builder().baseUrl(url).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(), token);
     }
 }

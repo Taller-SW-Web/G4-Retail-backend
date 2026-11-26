@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.inventario;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -49,10 +50,12 @@ public class InventarioIncidenciasConfig {
         SimpleClientHttpRequestFactory fabrica = new SimpleClientHttpRequestFactory();
         fabrica.setConnectTimeout(Duration.ofMillis(timeoutMs));
         fabrica.setReadTimeout(Duration.ofMillis(timeoutMs));
-        RestClient clienteToken = RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica).build();
+        RestClient clienteToken = RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build();
         TokenServicioG7 token = new TokenServicioG7(clienteToken, clientId, clientSecret, audiencia, Clock.systemUTC());
 
         log.info("Incidencias F12 → Inventory real de G6: url={} audiencia={}", url, audiencia);
-        return new InventarioIncidenciasHttp(RestClient.builder().baseUrl(url).requestFactory(fabrica).build(), token);
+        return new InventarioIncidenciasHttp(RestClient.builder().baseUrl(url).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(), token);
     }
 }
