@@ -15,7 +15,7 @@ import java.util.UUID;
  * @param operationId        UUID de la operación; Retail usa el mismo {@code incidenciaId}
  * @param externalIncidentId id de la incidencia en Retail ({@code incidenciaId})
  * @param quantity           unidades afectadas; en el mostrador se reporta prenda por prenda (1)
- * @param locationId         ubicación de Inventory que corresponde a la tienda (🟡 pendiente de G6)
+ * @param locationId         tienda de Retail; el adaptador la cambia por el UUID de ubicación de G6 (§5.12)
  * @param type               {@code DANIO}, {@code NO_UBICADA} u {@code OTRO_FISICO}
  * @param occurredAt         instante del reporte
  * @param actorRef           referencia opaca al vendedor que reportó
