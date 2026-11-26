@@ -80,6 +80,49 @@ class InventarioIncidenciasHttpTest {
     }
 
     @Test
+    @DisplayName("Una tienda sin mapeo, un cuerpo sin location_id o un cuerpo que no es JSON viajan sin cambios")
+    void sinMapeoAplicableElCuerpoNoCambia() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
+        MockRestServiceServer servidorG6 = MockRestServiceServer.bindTo(builder).build();
+        TokenServicioG7 token = mock(TokenServicioG7.class);
+        when(token.obtener()).thenReturn("token-de-servicio");
+        InventarioIncidenciasHttp conUbicaciones = new InventarioIncidenciasHttp(builder.build(), token,
+                InventarioIncidenciasHttp.ubicaciones("TIENDA-MIRAFLORES=uuid-miraflores"));
+
+        String otraTienda = "{\"location_id\":\"TIENDA-SURCO\"}";
+        String sinUbicacion = "{\"sku\":\"CAM-1\"}";
+        String noJson = "no-es-json";
+        for (String cuerpo : new String[] {otraTienda, sinUbicacion, noJson}) {
+            servidorG6.expect(requestTo(BASE + "/inventario/incidencias"))
+                    .andExpect(content().string(cuerpo))
+                    .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                            .body("{\"incidencia_id\":\"INC-INV-2\"}"));
+        }
+
+        for (String cuerpo : new String[] {otraTienda, sinUbicacion, noJson}) {
+            OutboxEvento evento = evento();
+            evento.setPayload(cuerpo);
+            assertThat(conUbicaciones.enviar(evento)).isEqualTo("INC-INV-2");
+        }
+        servidorG6.verify();
+        assertThat(InventarioIncidenciasHttp.ubicaciones(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("La configuración en modo g6 arma el adaptador real; sin URL o en memoria usa el doble")
+    void configuracionEligeElDestino() {
+        InventarioIncidenciasConfig config = new InventarioIncidenciasConfig();
+        String tokenUrl = "https://g7.example/api/v1/auth/token";
+
+        assertThat(config.inventarioIncidencias("g6", BASE, 1000, "TIENDA-MIRAFLORES=uuid", tokenUrl,
+                "modulo-retail", "secreto", "api-productos")).isInstanceOf(InventarioIncidenciasHttp.class);
+        assertThat(config.inventarioIncidencias("memoria", BASE, 1000, "", tokenUrl,
+                "modulo-retail", "secreto", "api-productos")).isInstanceOf(InventarioIncidenciasEnMemoria.class);
+        assertThat(config.inventarioIncidencias("g6", "", 1000, "", tokenUrl,
+                "modulo-retail", "secreto", "api-productos")).isInstanceOf(InventarioIncidenciasEnMemoria.class);
+    }
+
+    @Test
     @DisplayName("Una tienda sin location_id configurado viaja tal cual (G6 la rechaza con 422 y queda FALLIDO)")
     void tiendaSinMapeoViajaTalCual() {
         assertThat(InventarioIncidenciasHttp.ubicaciones(" TIENDA-A = uuid-a , mal-formado ,"))

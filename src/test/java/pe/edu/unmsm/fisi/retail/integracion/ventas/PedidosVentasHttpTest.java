@@ -175,6 +175,28 @@ class PedidosVentasHttpTest {
     }
 
     @Test
+    @DisplayName("RF-16-DOC: una respuesta sin 'contenido' es una búsqueda sin resultados")
+    void buscaPorDocumentoSinContenido() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678&pagina=0&tamano=50"))
+                .andRespond(withSuccess("{\"pagina\":0,\"totalPaginas\":0}", MediaType.APPLICATION_JSON));
+
+        assertThat(adaptador.buscarPorDocumento("72345678")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: si Ventas no responde (timeout) responde VENTAS_NO_DISPONIBLE")
+    void buscaPorDocumentoSinRespuesta() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678&pagina=0&tamano=50"))
+                .andRespond(request -> {
+                    throw new java.net.SocketTimeoutException("timeout");
+                });
+
+        assertThatThrownBy(() -> adaptador.buscarPorDocumento("72345678"))
+                .isInstanceOf(ServicioExternoNoDisponibleException.class)
+                .extracting("codigo").isEqualTo("VENTAS_NO_DISPONIBLE");
+    }
+
+    @Test
     @DisplayName("RF-16-DOC: un 5xx de Ventas responde VENTAS_NO_DISPONIBLE")
     void buscaPorDocumentoVentasCaido() {
         servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678&pagina=0&tamano=50"))
