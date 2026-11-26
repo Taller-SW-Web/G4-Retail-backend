@@ -1,6 +1,7 @@
 package pe.edu.unmsm.fisi.retail.integracion.productos.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,7 +22,7 @@ public record VarianteComercial(
         @JsonProperty("sku") String sku,
         @JsonProperty("identifying_attributes") List<Atributo> identifyingAttributes,
         @JsonProperty("non_identifying_attributes") List<Atributo> nonIdentifyingAttributes,
-        @JsonProperty("images") List<String> images) {
+        @JsonProperty("images") @JsonDeserialize(contentUsing = Atributo.ValorComoTexto.class) List<String> images) {
 
     public VarianteComercial {
         identifyingAttributes = identifyingAttributes == null ? List.of() : List.copyOf(identifyingAttributes);

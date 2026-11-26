@@ -13,6 +13,7 @@ import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.DisponibilidadComercial;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.FiltroCatalogo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.PaginaProductos;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Atributo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
@@ -75,14 +76,15 @@ class ProductosHttpTest {
     }
 
     @Test
-    @DisplayName("Lee las variantes activas del envoltorio {items, meta} y las guarda en caché")
+    @DisplayName("Lee las variantes del detalle comercial GET /productos/{id}?canal=RETAIL (M2M) y las guarda en caché")
     void variantesEnCache() {
-        servidor.expect(ExpectedCount.once(), requestTo(startsWith(BASE + "/productos/PROD-101/variantes")))
-                .andExpect(queryParam("estado", "ACTIVA"))
+        servidor.expect(ExpectedCount.once(), requestTo(BASE + "/productos/PROD-101?canal=RETAIL"))
                 .andRespond(withSuccess("""
-                        {"items":[{"variant_id":"V1","sku":"ZAPVEL-40-AZU","status":"ACTIVA",
-                        "identifying_attributes":[{"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor":"40"}]}],
-                        "meta":{"pagina":1}}""", MediaType.APPLICATION_JSON));
+                        {"product_id":"PROD-101","slug":"z","name":"Zapatillas Velocity X","tiene_variantes":true,
+                         "marca":{"marca_id":"M","name":"Velocity"},
+                         "variants":[{"variant_id":"V1","sku":"ZAPVEL-40-AZU",
+                         "identifying_attributes":[{"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor":"40"}]}]}
+                        """, MediaType.APPLICATION_JSON));
 
         List<VarianteComercial> primera = adaptador.listarVariantes("PROD-101");
         List<VarianteComercial> segunda = adaptador.listarVariantes("PROD-101");
@@ -91,6 +93,81 @@ class ProductosHttpTest {
         assertThat(primera.get(0).atributo("Talla")).contains("40");
         assertThat(segunda).isEqualTo(primera);
         servidor.verify();
+    }
+
+    @Test
+    @DisplayName("Acepta atributos con valor de cualquier tipo, como permite el esquema Atributo de G6")
+    void atributosConValorDeCualquierTipo() {
+        servidor.expect(requestTo(BASE + "/productos/PROD-102?canal=RETAIL"))
+                .andRespond(withSuccess("""
+                        {"product_id":"PROD-102","attributes":[{"caracteristica_id":"A","nombre":"Material","valor":{"es":"Malla"}}],
+                         "variants":[{"variant_id":"V1","sku":"POL-M-ROJ","images":[],
+                          "identifying_attributes":[{"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor_id":"T-M","valor":"M"},
+                                                    {"caracteristica_id":"CAR-NUM","nombre":"Numero","valor":42}],
+                          "non_identifying_attributes":[{"caracteristica_id":"CAR-TEC","nombre":"Tecnologias","valor":["Dry","UV"]},
+                                                        {"caracteristica_id":"CAR-IMP","nombre":"Impermeable","valor":true},
+                                                        {"caracteristica_id":"CAR-MED","nombre":"Medidas","valor":{"largo":70}},
+                                                        {"caracteristica_id":"CAR-NUL","nombre":"Nota","valor":null}]}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        VarianteComercial variante = adaptador.listarVariantes("PROD-102").get(0);
+
+        assertThat(variante.atributo("Talla")).contains("M");
+        assertThat(variante.atributo("Numero")).contains("42");
+        assertThat(variante.nonIdentifyingAttributes()).extracting(Atributo::valor)
+                .containsExactly("Dry, UV", "true", "{\"largo\":70}", null);
+    }
+
+    @Test
+    @DisplayName("Talla y color reales de G6 llegan como {nombre, valor_id}: se toma el nombre")
+    void tallaYColorComoObjeto() {
+        servidor.expect(requestTo(BASE + "/productos/PROD-103?canal=RETAIL"))
+                .andRespond(withSuccess("""
+                        {"product_id":"PROD-103","variants":[{"variant_id":"V1","sku":"ADI-HT5027-NEG-S",
+                         "identifying_attributes":[
+                           {"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor":{"nombre":"S","valor_id":"6787802a"}},
+                           {"caracteristica_id":"CAR-COLOR","nombre":"Color","valor":{"nombre":"Negro","valor_id":"61174517"}}]}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        VarianteComercial variante = adaptador.listarVariantes("PROD-103").get(0);
+
+        assertThat(variante.atributo("Talla")).contains("S");
+        assertThat(variante.atributo("Color")).contains("Negro");
+    }
+
+    @Test
+    @DisplayName("Lee los nombres de marcas y categorías de G6 y los guarda en caché")
+    void nombresDeMarcasYCategorias() {
+        servidor.expect(ExpectedCount.once(), requestTo(BASE + "/marcas"))
+                .andRespond(withSuccess("""
+                        {"brands":[{"marca_id":"M1","name":"adidas","status":"ACTIVA"},{"marca_id":"M2"}]}
+                        """, MediaType.APPLICATION_JSON));
+        servidor.expect(ExpectedCount.once(), requestTo(BASE + "/categorias"))
+                .andRespond(withSuccess("""
+                        {"categories":[{"categoria_id":"C1","parent_id":null,"name":"Medias","status":"ACTIVA"}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(adaptador.nombresDeMarcas()).containsExactlyEntriesOf(java.util.Map.of("M1", "adidas"));
+        assertThat(adaptador.nombresDeMarcas()).containsEntry("M1", "adidas");
+        assertThat(adaptador.nombresDeCategorias()).containsExactlyEntriesOf(java.util.Map.of("C1", "Medias"));
+        servidor.verify();
+    }
+
+    @Test
+    @DisplayName("Si G6 no entrega las marcas, el catálogo sigue con los ids")
+    void sinNombresSiG6Falla() {
+        servidor.expect(requestTo(BASE + "/marcas")).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThat(adaptador.nombresDeMarcas()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Un producto que no está activo en el canal (404) no tiene variantes vendibles")
+    void variantesDeProductoNoVisible() {
+        servidor.expect(requestTo(BASE + "/productos/PROD-404?canal=RETAIL"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThat(adaptador.listarVariantes("PROD-404")).isEmpty();
     }
 
     @Test
