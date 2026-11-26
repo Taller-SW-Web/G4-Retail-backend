@@ -58,3 +58,7 @@ jobs:
             target/postgres-reports/
           if-no-files-found: error
           retention-days: 30
+  performance:
+    name: Evidencia automática de performance S14
+    needs: integracion
+    uses: ./.github/workflows/workflow-performance.yml
