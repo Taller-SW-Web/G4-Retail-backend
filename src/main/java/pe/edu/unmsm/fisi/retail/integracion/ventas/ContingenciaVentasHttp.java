@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.ventas;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -38,7 +39,8 @@ public class ContingenciaVentasHttp implements ContingenciaVentasPort {
         SimpleClientHttpRequestFactory fabrica = new SimpleClientHttpRequestFactory();
         fabrica.setConnectTimeout(Duration.ofMillis(timeout));
         fabrica.setReadTimeout(Duration.ofMillis(timeout));
-        this.http = RestClient.builder().baseUrl(base).requestFactory(fabrica).build();
+        this.http = RestClient.builder().baseUrl(base).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build();
         this.token = token;
         this.codigosSucursal = codigosSucursal;
     }

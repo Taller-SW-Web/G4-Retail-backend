@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.seguridad;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +52,8 @@ public class TokenServicioG7 {
             @Value("${retail.integracion.g7.client-secret:}") String clientSecret,
             @Value("${retail.integracion.g7.audience-ventas:api-ventas}") String audience,
             @Value("${retail.integracion.g7.timeout-ms:20000}") int timeoutMs) {
-        this(RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica(timeoutMs)).build(),
+        this(RestClient.builder().baseUrl(tokenUrl).requestFactory(fabrica(timeoutMs))
+                        .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(),
                 clientId, clientSecret, audience, Clock.systemUTC());
     }
 

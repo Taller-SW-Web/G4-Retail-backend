@@ -1,12 +1,16 @@
 package pe.edu.unmsm.fisi.retail.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import pe.edu.unmsm.fisi.retail.dto.CalculoCarritoRequest;
 import pe.edu.unmsm.fisi.retail.dto.CalculoCarritoResponse;
 import pe.edu.unmsm.fisi.retail.dto.CarritoEsperaDto;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
+import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
+import pe.edu.unmsm.fisi.retail.integracion.productos.PromocionesPort;
+import pe.edu.unmsm.fisi.retail.integracion.productos.mock.PromocionesEnMemoria;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -23,7 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p><strong>Responsabilidades (RF-10, RF-11, RF-12):</strong></p>
  * <ul>
  *   <li>Calcular subtotales, descuentos y desglose SUNAT (IGV 18%) con redondeo bancario a 2 decimales.</li>
- *   <li>Evaluar cupones de descuento (ej. VERANO2026: 10%) sin bloquear ante cupones inválidos.</li>
+ *   <li>Evaluar promociones y cupones con el motor de Productos (G6) detrás de {@link PromocionesPort}
+ *   (RF-11), repartir el descuento entre las líneas y no bloquear la venta ante un cupón inválido ni
+ *   si el motor no responde.</li>
  *   <li>Persistencia y consulta de carritos en espera para la atención ágil en probadores.</li>
  * </ul>
  */
@@ -32,10 +38,22 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CarritoService {
 
     private static final BigDecimal FACTOR_BASE_IMPONIBLE = new BigDecimal("1.18");
-    private static final BigDecimal DESCUENTO_DIEZ_PORCIENTO = new BigDecimal("0.10");
+    private static final BigDecimal PRECIO_REFERENCIA = new BigDecimal("100.00");
 
     /** Almacenamiento concurrente de carritos en espera. */
     private final Map<UUID, CarritoEsperaDto> carritosEnEspera = new ConcurrentHashMap<>();
+
+    private final PromocionesPort promociones;
+
+    @Autowired
+    public CarritoService(PromocionesPort promociones) {
+        this.promociones = promociones;
+    }
+
+    /** Para pruebas unitarias: usa el doble de promociones con los cupones de prueba. */
+    public CarritoService() {
+        this(new PromocionesEnMemoria());
+    }
 
     /**
      * Calcula los totales del carrito con precisión de centavos según la fórmula oficial de SUNAT.
@@ -45,56 +63,51 @@ public class CarritoService {
             throw new ReglaNegocioException("CARRITO_VACIO", "El carrito debe contener al menos un item para calcular totales");
         }
 
-        List<String> advertencias = new ArrayList<>();
-        boolean aplicaDescuento10 = false;
-        String nombrePromo = null;
-
-        if (request.cupon() != null && !request.cupon().isBlank()) {
-            String cuponLimpio = request.cupon().trim().toUpperCase();
-            if ("VERANO2026".equals(cuponLimpio) || "DESCUENTO10".equals(cuponLimpio)) {
-                aplicaDescuento10 = true;
-                nombrePromo = "10% Cupón " + cuponLimpio;
-            } else {
-                advertencias.add("CUPON_INVALIDO");
-            }
-        }
-
-        List<CalculoCarritoResponse.LineaCalculoDto> lineas = new ArrayList<>();
-        BigDecimal subtotalBruto = BigDecimal.ZERO;
-        BigDecimal descuentoTotal = BigDecimal.ZERO;
-
         for (var item : request.items()) {
             if (item.cantidad() == null || item.cantidad() <= 0) {
                 throw new ReglaNegocioException("CANTIDAD_INVALIDA", "La cantidad para el SKU " + item.sku() + " debe ser mayor a 0");
             }
+        }
 
-            BigDecimal precioUnitario = item.precioUnitario() != null
-                    ? item.precioUnitario()
-                    : new BigDecimal("100.00"); // Precio de referencia por defecto si no es provisto
+        List<String> advertencias = new ArrayList<>();
+        String cupon = request.cupon() == null || request.cupon().isBlank() ? null : request.cupon().trim().toUpperCase();
 
-            BigDecimal lineaSubtotal = precioUnitario.multiply(BigDecimal.valueOf(item.cantidad()))
-                    .setScale(2, RoundingMode.HALF_UP);
-
-            BigDecimal descuentoLinea = BigDecimal.ZERO;
-            String promoAplicada = null;
-
-            if (aplicaDescuento10) {
-                descuentoLinea = lineaSubtotal.multiply(DESCUENTO_DIEZ_PORCIENTO).setScale(2, RoundingMode.HALF_UP);
-                promoAplicada = nombrePromo;
-            }
-
-            BigDecimal precioFinal = lineaSubtotal.subtract(descuentoLinea).setScale(2, RoundingMode.HALF_UP);
-
+        List<PromocionesPort.Linea> cesta = new ArrayList<>();
+        List<BigDecimal> subtotales = new ArrayList<>();
+        BigDecimal subtotalBruto = BigDecimal.ZERO;
+        for (var item : request.items()) {
+            BigDecimal precio = precioDe(item.precioUnitario());
+            BigDecimal lineaSubtotal = precio.multiply(BigDecimal.valueOf(item.cantidad())).setScale(2, RoundingMode.HALF_UP);
+            cesta.add(new PromocionesPort.Linea(item.sku(), item.cantidad(), precio));
+            subtotales.add(lineaSubtotal);
             subtotalBruto = subtotalBruto.add(lineaSubtotal);
-            descuentoTotal = descuentoTotal.add(descuentoLinea);
+        }
 
+        PromocionesPort.Evaluacion evaluacion = evaluar(cesta, cupon, advertencias);
+        // Nunca se descuenta más que el subtotal, aunque el motor calcule con otros precios.
+        BigDecimal descuentoTotal = evaluacion.aplica() ? evaluacion.descuentoTotal().min(subtotalBruto)
+                .setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+
+        List<CalculoCarritoResponse.LineaCalculoDto> lineas = new ArrayList<>();
+        BigDecimal repartido = BigDecimal.ZERO;
+        for (int i = 0; i < request.items().size(); i++) {
+            var item = request.items().get(i);
+            BigDecimal lineaSubtotal = subtotales.get(i);
+            BigDecimal descuentoLinea = BigDecimal.ZERO;
+            if (descuentoTotal.signum() > 0 && subtotalBruto.signum() > 0) {
+                // Reparto proporcional al subtotal de cada línea; la última absorbe el redondeo.
+                descuentoLinea = i == request.items().size() - 1
+                        ? descuentoTotal.subtract(repartido)
+                        : descuentoTotal.multiply(lineaSubtotal).divide(subtotalBruto, 2, RoundingMode.HALF_UP);
+                repartido = repartido.add(descuentoLinea);
+            }
             lineas.add(new CalculoCarritoResponse.LineaCalculoDto(
                     item.sku(),
                     item.cantidad(),
-                    precioUnitario.setScale(2, RoundingMode.HALF_UP),
+                    precioDe(item.precioUnitario()).setScale(2, RoundingMode.HALF_UP),
                     descuentoLinea,
-                    precioFinal,
-                    promoAplicada
+                    lineaSubtotal.subtract(descuentoLinea).setScale(2, RoundingMode.HALF_UP),
+                    descuentoLinea.signum() > 0 ? evaluacion.nombre() : null
             ));
         }
 
@@ -118,6 +131,25 @@ public class CarritoService {
                 evaluacionId,
                 advertencias
         );
+    }
+
+    /** Consulta el motor de promociones; si no responde, la venta sigue sin descuento (RF-11). */
+    private PromocionesPort.Evaluacion evaluar(List<PromocionesPort.Linea> cesta, String cupon, List<String> advertencias) {
+        try {
+            PromocionesPort.Evaluacion evaluacion = promociones.evaluar(cesta, cupon);
+            if (evaluacion.cuponRechazado()) {
+                advertencias.add("CUPON_INVALIDO");
+            }
+            return evaluacion;
+        } catch (ServicioExternoNoDisponibleException e) {
+            log.warn("Promociones no disponibles ({}): el carrito se calcula sin descuento", e.getMessage());
+            advertencias.add("PROMOCIONES_NO_DISPONIBLES");
+            return PromocionesPort.Evaluacion.sinBeneficio(false);
+        }
+    }
+
+    private static BigDecimal precioDe(BigDecimal precioUnitario) {
+        return precioUnitario != null ? precioUnitario : PRECIO_REFERENCIA; // Precio de referencia si no es provisto
     }
 
     /**
