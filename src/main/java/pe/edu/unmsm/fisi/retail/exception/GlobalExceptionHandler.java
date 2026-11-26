@@ -162,6 +162,17 @@ public class GlobalExceptionHandler {
                 "La ruta solicitada no existe en este servicio", peticion, List.of());
     }
 
+    /** Límite de consultas de otro módulo (por ejemplo, G7): {@code 429} con su {@code Retry-After}. */
+    @ExceptionHandler(DemasiadasSolicitudesException.class)
+    public org.springframework.http.ResponseEntity<ProblemDetail> manejarDemasiadas(DemasiadasSolicitudesException ex,
+                                                                                  HttpServletRequest peticion) {
+        ProblemDetail problema = construir(HttpStatus.TOO_MANY_REQUESTS, DemasiadasSolicitudesException.CODIGO,
+                "Demasiadas solicitudes", ex.getMessage(), peticion, List.of());
+        return org.springframework.http.ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(org.springframework.http.HttpHeaders.RETRY_AFTER, String.valueOf(ex.getReintentarEnSegundos()))
+                .body(problema);
+    }
+
     @ExceptionHandler(ServicioExternoNoDisponibleException.class)
     public ProblemDetail manejarServicioExterno(ServicioExternoNoDisponibleException ex, HttpServletRequest peticion) {
         return construir(HttpStatus.SERVICE_UNAVAILABLE, ex.getCodigo(), "Servicio externo no disponible",
