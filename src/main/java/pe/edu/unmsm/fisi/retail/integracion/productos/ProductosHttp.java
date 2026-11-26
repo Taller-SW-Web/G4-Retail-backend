@@ -32,7 +32,9 @@ import java.util.function.Supplier;
  *
  * <ul>
  *   <li>{@code GET /productos?canal=RETAIL&pagina=&tamanio=} (paginación desde 1)</li>
- *   <li>{@code GET /productos/{id}/variantes?estado=ACTIVA}, que responde {@code {items, meta}}</li>
+ *   <li>{@code GET /productos/{id}?canal=RETAIL}, el detalle comercial con sus {@code variants} activas. Es la
+ *   única vía M2M: {@code GET /productos/{id}/variantes} solo acepta tokens de usuario de G6 (403
+ *   {@code SCOPE_INSUFICIENTE} con el token de servicio, verificado el 26/11)</li>
  *   <li>{@code POST /productos/codigos-barras/resolver} con {@code {codigo_barras}}, que responde solo el SKU</li>
  *   <li>{@code GET /precios/skus/{sku}?canal=RETAIL}</li>
  *   <li>{@code GET /inventario/disponibilidad/comercial?skus=a,b&canal=RETAIL} (hasta 100 SKU por llamada)</li>
@@ -49,7 +51,6 @@ public class ProductosHttp implements ProductosPort {
 
     static final String CANAL = "RETAIL";
     private static final int MAXIMO_SKUS = 100;
-    private static final int TAMANIO_VARIANTES = 200;
 
     private final RestClient restClient;
     private final TokenServicioG7 tokenServicio;
@@ -94,14 +95,21 @@ public class ProductosHttp implements ProductosPort {
     @Override
     public List<VarianteComercial> listarVariantes(String productoId) {
         return enCache(cacheVariantes, productoId, () -> llamar("listar variantes", () -> {
-            PaginaVariantes pagina = restClient.get()
-                    .uri(uri -> uri.path("/productos/{id}/variantes").queryParam("estado", "ACTIVA")
-                            .queryParam("pagina", 1).queryParam("tamanio", TAMANIO_VARIANTES).build(productoId))
+            DetalleProducto detalle;
+            try {
+                detalle = restClient.get()
+                    .uri(uri -> uri.path("/productos/{id}").queryParam("canal", CANAL).build(productoId))
                     .header(HttpHeaders.AUTHORIZATION, bearer())
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
-                    .body(PaginaVariantes.class);
-            return pagina == null || pagina.items() == null ? List.<VarianteComercial>of() : List.copyOf(pagina.items());
+                    .body(DetalleProducto.class);
+            } catch (RestClientResponseException e) {
+                if (e.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                    return List.<VarianteComercial>of();
+                }
+                throw e;
+            }
+            return detalle == null || detalle.variants() == null ? List.<VarianteComercial>of() : List.copyOf(detalle.variants());
         }));
     }
 
@@ -206,9 +214,9 @@ public class ProductosHttp implements ProductosPort {
     private record EnCache<T>(T valor, Instant venceEn) {
     }
 
-    /** {@code PaginaVariantes} de G6: {@code {items, meta}}. */
+    /** {@code ProductoDetalleComercial} de G6; Retail solo usa sus {@code variants}. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record PaginaVariantes(@JsonProperty("items") List<VarianteComercial> items) {
+    record DetalleProducto(@JsonProperty("variants") List<VarianteComercial> variants) {
     }
 
     /** {@code ResolverCodigoBarrasResponse} de G6. */

@@ -75,14 +75,15 @@ class ProductosHttpTest {
     }
 
     @Test
-    @DisplayName("Lee las variantes activas del envoltorio {items, meta} y las guarda en caché")
+    @DisplayName("Lee las variantes del detalle comercial GET /productos/{id}?canal=RETAIL (M2M) y las guarda en caché")
     void variantesEnCache() {
-        servidor.expect(ExpectedCount.once(), requestTo(startsWith(BASE + "/productos/PROD-101/variantes")))
-                .andExpect(queryParam("estado", "ACTIVA"))
+        servidor.expect(ExpectedCount.once(), requestTo(BASE + "/productos/PROD-101?canal=RETAIL"))
                 .andRespond(withSuccess("""
-                        {"items":[{"variant_id":"V1","sku":"ZAPVEL-40-AZU","status":"ACTIVA",
-                        "identifying_attributes":[{"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor":"40"}]}],
-                        "meta":{"pagina":1}}""", MediaType.APPLICATION_JSON));
+                        {"product_id":"PROD-101","slug":"z","name":"Zapatillas Velocity X","tiene_variantes":true,
+                         "marca":{"marca_id":"M","name":"Velocity"},
+                         "variants":[{"variant_id":"V1","sku":"ZAPVEL-40-AZU",
+                         "identifying_attributes":[{"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor":"40"}]}]}
+                        """, MediaType.APPLICATION_JSON));
 
         List<VarianteComercial> primera = adaptador.listarVariantes("PROD-101");
         List<VarianteComercial> segunda = adaptador.listarVariantes("PROD-101");
@@ -91,6 +92,15 @@ class ProductosHttpTest {
         assertThat(primera.get(0).atributo("Talla")).contains("40");
         assertThat(segunda).isEqualTo(primera);
         servidor.verify();
+    }
+
+    @Test
+    @DisplayName("Un producto que no está activo en el canal (404) no tiene variantes vendibles")
+    void variantesDeProductoNoVisible() {
+        servidor.expect(requestTo(BASE + "/productos/PROD-404?canal=RETAIL"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThat(adaptador.listarVariantes("PROD-404")).isEmpty();
     }
 
     @Test
