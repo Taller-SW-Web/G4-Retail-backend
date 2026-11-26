@@ -54,8 +54,10 @@ public class CatalogoService {
     public CatalogoResponse buscar(String q, String categoria, String disciplina, String marca,
                                    int page, int size) {
         String categoriaEfectiva = primeroNoVacio(categoria, disciplina);
-        FiltroCatalogo filtro = FiltroCatalogo.desdePaginacionRetail(
-                normalizarFiltro(q), normalizarFiltro(categoriaEfectiva), normalizarFiltro(marca), page, size);
+        Map<String, String> marcas = productos.nombresDeMarcas();
+        Map<String, String> categorias = productos.nombresDeCategorias();
+        FiltroCatalogo filtro = FiltroCatalogo.desdePaginacionRetail(normalizarFiltro(q),
+                idDe(normalizarFiltro(categoriaEfectiva), categorias), idDe(normalizarFiltro(marca), marcas), page, size);
 
         PaginaProductos pagina = productos.listarProductos(filtro);
         if (pagina.items().isEmpty()) {
@@ -72,7 +74,8 @@ public class CatalogoService {
                 variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
 
         List<ProductoCatalogoResponse> items = pagina.items().stream()
-                .map(producto -> armarProducto(producto, variantesPorProducto.get(producto.productId()), estados))
+                .map(producto -> armarProducto(producto, variantesPorProducto.get(producto.productId()), estados,
+                        marcas, categorias))
                 .toList();
 
         return new CatalogoResponse(items, page, size, pagina.total());
@@ -126,16 +129,18 @@ public class CatalogoService {
 
     private ProductoCatalogoResponse armarProducto(ProductoComercial producto,
                                                    List<VarianteComercial> variantes,
-                                                   Map<String, VarianteResponse.Disponibilidad> estados) {
+                                                   Map<String, VarianteResponse.Disponibilidad> estados,
+                                                   Map<String, String> marcas, Map<String, String> categorias) {
+        String categoria = nombreDe(producto.categoriaId(), categorias);
         List<VarianteResponse> armadas = variantes.stream()
                 .map(variante -> armarVariante(variante, estados))
                 .toList();
         return new ProductoCatalogoResponse(
                 producto.productId(),
                 producto.name(),
-                producto.marcaId(),
-                producto.categoriaId(),
-                producto.categoriaId(),
+                nombreDe(producto.marcaId(), marcas),
+                categoria,
+                categoria,
                 ProductoCatalogoResponse.precioDesde(armadas),
                 producto.images().isEmpty() ? null : producto.images().get(0),
                 armadas);
@@ -208,5 +213,25 @@ public class CatalogoService {
     /** Un filtro en blanco es un filtro ausente: el buscador vacio no debe filtrar por cadena vacia. */
     private String normalizarFiltro(String valor) {
         return (valor == null || valor.isBlank()) ? null : valor.trim();
+    }
+
+    /** Nombre publicado por G6 para ese id; si no lo hay, el id tal cual. */
+    private static String nombreDe(String id, Map<String, String> nombres) {
+        return id == null ? null : nombres.getOrDefault(id, id);
+    }
+
+    /**
+     * El POS filtra por lo que muestra (el nombre), pero G6 filtra por id: traduce el nombre a su id
+     * sin distinguir mayúsculas. Un valor que ya es id, o que no figura, se envía tal cual.
+     */
+    private static String idDe(String valor, Map<String, String> nombres) {
+        if (valor == null) {
+            return null;
+        }
+        return nombres.entrySet().stream()
+                .filter(e -> e.getValue().equalsIgnoreCase(valor))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(valor);
     }
 }

@@ -17,8 +17,9 @@ import java.util.List;
  *
  * <p>De aqui salen la talla y el color de cada variante: vienen como pares nombre/valor, no como
  * campos fijos. El contrato de G6 permite que {@code valor} sea de cualquier tipo (texto, numero,
- * booleano, lista u objeto); Retail lo guarda como texto para mostrarlo en mostrador: una lista se une
- * con comas y un objeto queda en su JSON.</p>
+ * booleano, lista u objeto); Retail lo guarda como texto para mostrarlo en mostrador. Con datos reales
+ * (26/11) la talla y el color llegan como {@code {"nombre": "S", "valor_id": "..."}}: de un objeto se toma
+ * {@code nombre}; una lista se une con comas y otro objeto queda en su JSON.</p>
  *
  * @param caracteristicaId identificador de la caracteristica en G6
  * @param nombre           nombre legible, por ejemplo {@code Talla} o {@code Color}
@@ -55,6 +56,9 @@ public record Atributo(
                     }
                 });
                 return String.join(", ", partes);
+            }
+            if (nodo.isObject() && nodo.hasNonNull("nombre")) {
+                return comoTexto(nodo.get("nombre"));
             }
             return nodo.isValueNode() ? nodo.asText() : nodo.toString();
         }

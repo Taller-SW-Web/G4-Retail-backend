@@ -58,6 +58,7 @@ public class ProductosHttp implements ProductosPort {
     private final Duration ttl;
     private final Map<String, EnCache<List<VarianteComercial>>> cacheVariantes = new ConcurrentHashMap<>();
     private final Map<String, EnCache<Optional<Precio>>> cachePrecios = new ConcurrentHashMap<>();
+    private final Map<String, EnCache<Map<String, String>>> cacheNombres = new ConcurrentHashMap<>();
 
     public ProductosHttp(RestClient restClient, TokenServicioG7 tokenServicio, Clock reloj, Duration ttl) {
         this.restClient = restClient;
@@ -198,6 +199,42 @@ public class ProductosHttp implements ProductosPort {
                     e.getMostSpecificCause() != e ? " | causa: " + e.getMostSpecificCause().getMessage() : "");
             throw new ServicioExternoNoDisponibleException("PRODUCTOS_NO_DISPONIBLE",
                     "Productos no respondió a tiempo. Reintente en unos segundos");
+        }
+    }
+
+    @Override
+    public Map<String, String> nombresDeMarcas() {
+        return nombres("/marcas", "brands", "marca_id");
+    }
+
+    @Override
+    public Map<String, String> nombresDeCategorias() {
+        return nombres("/categorias", "categories", "categoria_id");
+    }
+
+    /** Lee {@code {<lista>: [{<id>, name}]}} de G6. Si falla, el catálogo sigue con los ids. */
+    private Map<String, String> nombres(String ruta, String lista, String campoId) {
+        try {
+            return enCache(cacheNombres, ruta, () -> {
+                com.fasterxml.jackson.databind.JsonNode cuerpo = restClient.get()
+                        .uri(ruta)
+                        .header(HttpHeaders.AUTHORIZATION, bearer())
+                        .accept(MediaType.APPLICATION_JSON)
+                        .retrieve()
+                        .body(com.fasterxml.jackson.databind.JsonNode.class);
+                Map<String, String> resultado = new java.util.HashMap<>();
+                if (cuerpo != null && cuerpo.path(lista).isArray()) {
+                    cuerpo.path(lista).forEach(n -> {
+                        if (n.hasNonNull(campoId) && n.hasNonNull("name")) {
+                            resultado.put(n.get(campoId).asText(), n.get("name").asText());
+                        }
+                    });
+                }
+                return Map.copyOf(resultado);
+            });
+        } catch (RuntimeException e) {
+            log.warn("Productos (G6) no entregó {}: {}", ruta, e.getMessage());
+            return Map.of();
         }
     }
 

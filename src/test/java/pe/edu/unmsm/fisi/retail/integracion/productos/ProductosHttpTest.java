@@ -119,6 +119,49 @@ class ProductosHttpTest {
     }
 
     @Test
+    @DisplayName("Talla y color reales de G6 llegan como {nombre, valor_id}: se toma el nombre")
+    void tallaYColorComoObjeto() {
+        servidor.expect(requestTo(BASE + "/productos/PROD-103?canal=RETAIL"))
+                .andRespond(withSuccess("""
+                        {"product_id":"PROD-103","variants":[{"variant_id":"V1","sku":"ADI-HT5027-NEG-S",
+                         "identifying_attributes":[
+                           {"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor":{"nombre":"S","valor_id":"6787802a"}},
+                           {"caracteristica_id":"CAR-COLOR","nombre":"Color","valor":{"nombre":"Negro","valor_id":"61174517"}}]}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        VarianteComercial variante = adaptador.listarVariantes("PROD-103").get(0);
+
+        assertThat(variante.atributo("Talla")).contains("S");
+        assertThat(variante.atributo("Color")).contains("Negro");
+    }
+
+    @Test
+    @DisplayName("Lee los nombres de marcas y categorías de G6 y los guarda en caché")
+    void nombresDeMarcasYCategorias() {
+        servidor.expect(ExpectedCount.once(), requestTo(BASE + "/marcas"))
+                .andRespond(withSuccess("""
+                        {"brands":[{"marca_id":"M1","name":"adidas","status":"ACTIVA"},{"marca_id":"M2"}]}
+                        """, MediaType.APPLICATION_JSON));
+        servidor.expect(ExpectedCount.once(), requestTo(BASE + "/categorias"))
+                .andRespond(withSuccess("""
+                        {"categories":[{"categoria_id":"C1","parent_id":null,"name":"Medias","status":"ACTIVA"}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(adaptador.nombresDeMarcas()).containsExactlyEntriesOf(java.util.Map.of("M1", "adidas"));
+        assertThat(adaptador.nombresDeMarcas()).containsEntry("M1", "adidas");
+        assertThat(adaptador.nombresDeCategorias()).containsExactlyEntriesOf(java.util.Map.of("C1", "Medias"));
+        servidor.verify();
+    }
+
+    @Test
+    @DisplayName("Si G6 no entrega las marcas, el catálogo sigue con los ids")
+    void sinNombresSiG6Falla() {
+        servidor.expect(requestTo(BASE + "/marcas")).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThat(adaptador.nombresDeMarcas()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Un producto que no está activo en el canal (404) no tiene variantes vendibles")
     void variantesDeProductoNoVisible() {
         servidor.expect(requestTo(BASE + "/productos/PROD-404?canal=RETAIL"))
