@@ -7,9 +7,12 @@ import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.dto.CalculoCarritoRequest;
 import pe.edu.unmsm.fisi.retail.dto.CalculoCarritoResponse;
 import pe.edu.unmsm.fisi.retail.dto.CarritoEsperaDto;
+import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
 import pe.edu.unmsm.fisi.retail.exception.ReglaNegocioException;
 import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
+import pe.edu.unmsm.fisi.retail.integracion.productos.ProductosPort;
 import pe.edu.unmsm.fisi.retail.integracion.productos.PromocionesPort;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio;
 import pe.edu.unmsm.fisi.retail.integracion.productos.mock.PromocionesEnMemoria;
 
 import java.math.BigDecimal;
@@ -38,16 +41,28 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CarritoService {
 
     private static final BigDecimal FACTOR_BASE_IMPONIBLE = new BigDecimal("1.18");
-    private static final BigDecimal PRECIO_REFERENCIA = new BigDecimal("100.00");
 
     /** Almacenamiento concurrente de carritos en espera. */
     private final Map<UUID, CarritoEsperaDto> carritosEnEspera = new ConcurrentHashMap<>();
 
     private final PromocionesPort promociones;
+    /** Precio vigente por SKU. {@code null} solo en las pruebas que fijan el precio en el item. */
+    private final ProductosPort productos;
 
+    /**
+     * Contrato §5.4: el precio lo obtiene el backend de Productos (G6) y nunca se confía en el que envía
+     * el cliente. Es el mismo precio que usa la venta (F5), así que la vista previa y el cobro coinciden.
+     */
     @Autowired
+    public CarritoService(PromocionesPort promociones, ProductosPort productos) {
+        this.promociones = promociones;
+        this.productos = productos;
+    }
+
+    /** Para pruebas unitarias del cálculo: toma el precio del item. */
     public CarritoService(PromocionesPort promociones) {
         this.promociones = promociones;
+        this.productos = null;
     }
 
     /** Para pruebas unitarias: usa el doble de promociones con los cupones de prueba. */
@@ -74,9 +89,11 @@ public class CarritoService {
 
         List<PromocionesPort.Linea> cesta = new ArrayList<>();
         List<BigDecimal> subtotales = new ArrayList<>();
+        List<BigDecimal> precios = new ArrayList<>();
         BigDecimal subtotalBruto = BigDecimal.ZERO;
         for (var item : request.items()) {
-            BigDecimal precio = precioDe(item.precioUnitario());
+            BigDecimal precio = precioDe(item);
+            precios.add(precio);
             BigDecimal lineaSubtotal = precio.multiply(BigDecimal.valueOf(item.cantidad())).setScale(2, RoundingMode.HALF_UP);
             cesta.add(new PromocionesPort.Linea(item.sku(), item.cantidad(), precio));
             subtotales.add(lineaSubtotal);
@@ -104,7 +121,7 @@ public class CarritoService {
             lineas.add(new CalculoCarritoResponse.LineaCalculoDto(
                     item.sku(),
                     item.cantidad(),
-                    precioDe(item.precioUnitario()).setScale(2, RoundingMode.HALF_UP),
+                    precios.get(i).setScale(2, RoundingMode.HALF_UP),
                     descuentoLinea,
                     lineaSubtotal.subtract(descuentoLinea).setScale(2, RoundingMode.HALF_UP),
                     descuentoLinea.signum() > 0 ? evaluacion.nombre() : null
@@ -148,8 +165,21 @@ public class CarritoService {
         }
     }
 
-    private static BigDecimal precioDe(BigDecimal precioUnitario) {
-        return precioUnitario != null ? precioUnitario : PRECIO_REFERENCIA; // Precio de referencia si no es provisto
+    /**
+     * Precio vigente del SKU en Productos (G6), con la oferta si la hay. Un SKU sin precio en el canal
+     * responde {@code 404 SKU_NO_ENCONTRADO}; si Productos no responde, {@code 503} (contrato §5.4).
+     */
+    private BigDecimal precioDe(CalculoCarritoRequest.ItemCarritoCalculoDto item) {
+        if (productos == null) {
+            if (item.precioUnitario() == null) {
+                throw new ReglaNegocioException("PRECIO_REQUERIDO", "Falta el precio del SKU " + item.sku());
+            }
+            return item.precioUnitario();
+        }
+        return productos.consultarPrecio(item.sku())
+                .map(Precio::precioEfectivo)
+                .orElseThrow(() -> new RecursoNoEncontradoException("SKU_NO_ENCONTRADO",
+                        "El SKU " + item.sku() + " no tiene precio vigente en el catalogo"));
     }
 
     /**
