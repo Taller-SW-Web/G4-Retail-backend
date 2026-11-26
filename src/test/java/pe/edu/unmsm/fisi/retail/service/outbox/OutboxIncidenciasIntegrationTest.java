@@ -16,6 +16,7 @@ import pe.edu.unmsm.fisi.retail.model.EstadoOutbox;
 import pe.edu.unmsm.fisi.retail.model.OutboxEvento;
 import pe.edu.unmsm.fisi.retail.repository.OutboxEventoRepository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -61,7 +62,8 @@ class OutboxIncidenciasIntegrationTest {
                 TipoEventoOutbox.INCIDENCIA_INVENTARIO_REPORTADA.name(), incidenciaId).orElseThrow();
         assertThat(pendiente.getEstado()).isEqualTo(EstadoOutbox.PENDIENTE);
         assertThat(pendiente.getDestino()).isEqualTo(DestinoOutbox.PRODUCTOS_G6);
-        assertThat(pendiente.getPayload()).contains("\"canal\":\"RETAIL\"").contains(incidenciaId);
+        assertThat(pendiente.getPayload()).contains("\"external_incident_id\":\"" + incidenciaId + "\"")
+                .contains("\"type\":\"DANIO\"").contains("\"location_id\":\"TIENDA-MIRAFLORES\"");
 
         int enviados = despachador.procesarPendientes();
 
@@ -107,7 +109,7 @@ class OutboxIncidenciasIntegrationTest {
     @DisplayName("§2.9: registrar fuera de una transacción falla en vez de dejar un evento huérfano")
     void exigeTransaccion() {
         assertThatThrownBy(() -> publicador.registrar(TipoEventoOutbox.INCIDENCIA_INVENTARIO_REPORTADA,
-                "sin-transaccion", "{}"))
+                UUID.randomUUID().toString(), "{}"))
                 .isInstanceOf(IllegalTransactionStateException.class);
     }
 
@@ -124,9 +126,8 @@ class OutboxIncidenciasIntegrationTest {
     }
 
     private static IncidenciaReportadaPayload payload(String incidenciaId) {
-        return new IncidenciaReportadaPayload(incidenciaId, IncidenciaReportadaPayload.CANAL_RETAIL,
-                "TIENDA-MIRAFLORES", "CAM-PERU-M-BLA", "7759876543210", "MANCHADO_PROBADOR",
-                "Mancha de maquillaje en el cuello", null, null, "2026-11-26T15:30:00Z");
+        return IncidenciaReportadaPayload.desdeRetail(UUID.fromString(incidenciaId), "TIENDA-MIRAFLORES",
+                "CAM-PERU-M-BLA", "MANCHADO_PROBADOR", OffsetDateTime.parse("2026-11-26T15:30:00Z"), null);
     }
 
     /** Escucha los eventos internos que el despachador publica, como lo hará el servicio de F12. */

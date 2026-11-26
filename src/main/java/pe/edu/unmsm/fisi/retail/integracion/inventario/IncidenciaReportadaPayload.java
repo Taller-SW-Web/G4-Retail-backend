@@ -1,31 +1,60 @@
 package pe.edu.unmsm.fisi.retail.integracion.inventario;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
 /**
- * Cuerpo de {@code POST /api/v1/inventario/incidencias} hacia Inventory de Productos (G6).
+ * Cuerpo de {@code POST /api/v1/inventario/incidencias} de Inventory (G6), según
+ * {@code CrearIncidenciaInventarioRequest} de su OpenAPI (contrato de Retail v0.5, §5.12).
  *
- * <p>Es la propuesta de Retail del contrato v0.5, §5.12, pendiente de confirmación de G6. El servicio
- * de F12 lo arma al registrar la incidencia y lo deja en el outbox con
- * {@code TipoEventoOutbox.INCIDENCIA_INVENTARIO_REPORTADA}.</p>
+ * <p>El servicio de F12 lo arma con {@link #desdeRetail} al registrar la incidencia y lo deja en el
+ * outbox con {@code TipoEventoOutbox.INCIDENCIA_INVENTARIO_REPORTADA}.</p>
  *
- * @param incidenciaId       id local de la incidencia; también es la {@code Idempotency-Key}
- * @param canal              siempre {@code RETAIL}
- * @param tiendaId           código de sucursal ({@code TIENDA-...})
- * @param tipoFalla          {@code MANCHADO_PROBADOR}, {@code COSTURA_ROTA}, {@code EXTRAVIO_NO_UBICADO} o
- *                           {@code DEFECTO_FABRICA}
- * @param actaNumero         número del acta de merma (RF-34) si ya la tiene; si no, {@code null}
- * @param fechaReporte       instante del reporte en ISO-8601 UTC
+ * @param operationId        UUID de la operación; Retail usa el mismo {@code incidenciaId}
+ * @param externalIncidentId id de la incidencia en Retail ({@code incidenciaId})
+ * @param quantity           unidades afectadas; en el mostrador se reporta prenda por prenda (1)
+ * @param locationId         ubicación de Inventory que corresponde a la tienda (🟡 pendiente de G6)
+ * @param type               {@code DANIO}, {@code NO_UBICADA} u {@code OTRO_FISICO}
+ * @param occurredAt         instante del reporte
+ * @param actorRef           referencia opaca al vendedor que reportó
  */
 public record IncidenciaReportadaPayload(
-        String incidenciaId,
-        String canal,
-        String tiendaId,
-        String sku,
-        String codigoBarras,
-        String tipoFalla,
-        String detalleObservacion,
-        String evidenciaFotoUrl,
-        String actaNumero,
-        String fechaReporte) {
+        @JsonProperty("operation_id") String operationId,
+        @JsonProperty("external_incident_id") String externalIncidentId,
+        @JsonProperty("sku") String sku,
+        @JsonProperty("quantity") int quantity,
+        @JsonProperty("location_id") String locationId,
+        @JsonProperty("type") String type,
+        @JsonProperty("occurred_at") OffsetDateTime occurredAt,
+        @JsonProperty("actor_ref") String actorRef) {
 
-    public static final String CANAL_RETAIL = "RETAIL";
+    /**
+     * Arma el cuerpo de G6 a partir de la incidencia de Retail.
+     *
+     * @param incidenciaId UUID local de la incidencia (también es la {@code Idempotency-Key})
+     * @param tipoFalla    tipo de falla de Retail (§5.12)
+     */
+    public static IncidenciaReportadaPayload desdeRetail(UUID incidenciaId, String locationId, String sku,
+                                                         String tipoFalla, OffsetDateTime reportadaEn, UUID vendedorId) {
+        return new IncidenciaReportadaPayload(incidenciaId.toString(), incidenciaId.toString(), sku, 1,
+                locationId, tipoInventory(tipoFalla), reportadaEn, vendedorId == null ? null : vendedorId.toString());
+    }
+
+    /**
+     * Tipo de falla de Retail → tipo de incidencia de Inventory.
+     * {@code EXTRAVIO_NO_UBICADO} → {@code NO_UBICADA}; las fallas físicas de la prenda → {@code DANIO};
+     * cualquier otro valor → {@code OTRO_FISICO}.
+     */
+    public static String tipoInventory(String tipoFalla) {
+        if (tipoFalla == null) {
+            return "OTRO_FISICO";
+        }
+        return switch (tipoFalla) {
+            case "EXTRAVIO_NO_UBICADO" -> "NO_UBICADA";
+            case "MANCHADO_PROBADOR", "COSTURA_ROTA", "DEFECTO_FABRICA" -> "DANIO";
+            default -> "OTRO_FISICO";
+        };
+    }
 }

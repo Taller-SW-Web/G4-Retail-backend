@@ -52,7 +52,7 @@ class InventarioIncidenciasHttpTest {
                 .andExpect(header("X-Correlation-Id", "corr-123"))
                 .andExpect(content().json(PAYLOAD))
                 .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"incidenciaInventoryId\":\"INC-INV-77\",\"estado\":\"RECIBIDA\"}"));
+                        .body("{\"incidencia_id\":\"INC-INV-77\",\"estado\":\"ABIERTA\",\"blocked\":1}"));
 
         assertThat(adaptador.enviar(evento())).isEqualTo("INC-INV-77");
         servidor.verify();

@@ -1,6 +1,7 @@
 package pe.edu.unmsm.fisi.retail.integracion.inventario;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -15,9 +16,11 @@ import pe.edu.unmsm.fisi.retail.service.outbox.EnvioOutboxException;
 /**
  * Adaptador HTTP real hacia Inventory de Productos (G6) para el reporte de incidencias (F12, B6).
  *
- * <p>Envía el payload del outbox tal cual a {@code POST /api/v1/inventario/incidencias} con:</p>
+ * <p>Envía el payload del outbox ({@link IncidenciaReportadaPayload}, formato del OpenAPI de G6) a
+ * {@code POST /api/v1/inventario/incidencias} con:</p>
  * <ul>
- *   <li>{@code Authorization: Bearer} con el token de servicio de {@code modulo-retail};</li>
+ *   <li>{@code Authorization: Bearer} con el token de servicio de {@code modulo-retail} para la audiencia
+ *   {@code api-productos} (scope {@code inventario:incidencias:reportar});</li>
  *   <li>{@code Idempotency-Key} igual al {@code incidenciaId}, el mismo en cada reintento;</li>
  *   <li>{@code X-Correlation-Id} de la petición que originó la incidencia.</li>
  * </ul>
@@ -64,7 +67,7 @@ public class InventarioIncidenciasHttp implements DestinoOutbox {
             RespuestaInventory respuesta = peticion.body(evento.getPayload())
                     .retrieve()
                     .body(RespuestaInventory.class);
-            String referencia = respuesta == null ? null : respuesta.incidenciaInventoryId();
+            String referencia = respuesta == null ? null : respuesta.incidenciaId();
             log.info("Inventory (G6) aceptó la incidencia {} (incidenciaInventoryId={})",
                     evento.getAgregadoId(), referencia);
             return referencia;
@@ -81,8 +84,8 @@ public class InventarioIncidenciasHttp implements DestinoOutbox {
         return "PRODUCTOS_G6";
     }
 
-    /** Respuesta esperada: {@code 201 {"incidenciaInventoryId": "...", "estado": "RECIBIDA"}}. */
+    /** {@code IncidenciaInventarioResponse} de G6; Retail solo guarda el id y el estado ({@code ABIERTA}). */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record RespuestaInventory(String incidenciaInventoryId, String estado) {
+    record RespuestaInventory(@JsonProperty("incidencia_id") String incidenciaId, @JsonProperty("estado") String estado) {
     }
 }
