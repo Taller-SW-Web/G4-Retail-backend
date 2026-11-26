@@ -29,7 +29,8 @@ public final class Correlacion {
             return valor;
         }
         String recibido = peticion.getHeader(ENCABEZADO);
-        return (recibido == null || recibido.isBlank()) ? UUID.randomUUID().toString() : recibido;
+        return (recibido != null && TrazabilidadFilter.ID_VALIDO.matcher(recibido).matches())
+                ? recibido : UUID.randomUUID().toString();
     }
 
     /** Valor del hilo actual, o {@code null} si la llamada no nació de una petición HTTP. */
