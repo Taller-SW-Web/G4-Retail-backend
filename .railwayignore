@@ -1,0 +1,5 @@
+# Railway sube la carpeta del repo con "railway up" (scripts/deploy/deploy-railway.sh de devsecops-templates).
+# .scannerwork es un enlace a target/sonar, que solo existe en el CI de Sonar: si Railway lo sigue,
+# el despliegue falla con "IO error ... .scannerwork: No such file or directory".
+.scannerwork
+target/
