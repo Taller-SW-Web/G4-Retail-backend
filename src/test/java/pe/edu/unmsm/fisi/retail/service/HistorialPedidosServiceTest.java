@@ -9,6 +9,7 @@ import pe.edu.unmsm.fisi.retail.dto.PedidoResumenDto;
 import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.exception.ParametroInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoResumenVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidosVentasPort;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
@@ -259,5 +260,48 @@ class HistorialPedidosServiceTest {
                 pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "ENTREGADO", List.of())));
 
         assertThat(servicio.detalle(USUARIO, "PED-2026-00001").pedidoId()).isEqualTo("PED-2026-00001");
+    }
+
+    // ---- RF-16-DOC con Ventas real (contrato v0.5.2, §5.6) ----
+
+    private HistorialPedidosService conBusquedaEnVentas() {
+        return new HistorialPedidosService(ventas, registro, personal, "g5");
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: con g5 busca el documento en Ventas, sin depender de las ventas de esta ejecución")
+    void porDocumentoEnVentas() {
+        when(ventas.buscarPorDocumento("72345678")).thenReturn(List.of(
+                new PedidoResumenVentas("PED-2026-00001", "RETAIL", "ENTREGADO", new BigDecimal("100.00"), "PEN",
+                        "2026-10-01T10:00:00Z", "Juan Pérez"),
+                new PedidoResumenVentas("PED-2026-00003", "MARKETPLACE", "EN_PREPARACION", new BigDecimal("50.00"), "PEN",
+                        "2026-11-05T10:00:00Z", "Juan Pérez")));
+
+        PaginaPedidosResponse pagina = conBusquedaEnVentas().buscar(USUARIO, null, "72345678", 0, 20);
+
+        assertThat(pagina.items()).extracting(PedidoResumenDto::pedidoId)
+                .containsExactly("PED-2026-00003", "PED-2026-00001");
+        assertThat(pagina.items().get(0).estadoComercial()).isEqualTo("EN_PREPARACION");
+        assertThat(pagina.items().get(0).fechaCreacion()).isEqualTo("2026-11-05T05:00:00-05:00");
+        assertThat(pagina.items().get(1).total()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: con g5 y sin resultados en Ventas responde PEDIDO_NO_ENCONTRADO")
+    void porDocumentoEnVentasSinResultados() {
+        when(ventas.buscarPorDocumento("11111111")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> conBusquedaEnVentas().buscar(USUARIO, null, "11111111", 0, 20))
+                .isInstanceOf(RecursoNoEncontradoException.class)
+                .extracting("codigo").isEqualTo("PEDIDO_NO_ENCONTRADO");
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: por defecto (registro) no llama a la búsqueda de Ventas")
+    void porDefectoUsaElRegistroLocal() {
+        vendidosEnEstaEjecucion(pedido("PED-2026-00001", "2026-10-01T10:00:00Z", "PAGADO", List.of()));
+
+        assertThat(servicio.buscar(USUARIO, null, "72345678", 0, 20).items()).hasSize(1);
+        org.mockito.Mockito.verify(ventas, org.mockito.Mockito.never()).buscarPorDocumento(org.mockito.ArgumentMatchers.anyString());
     }
 }
