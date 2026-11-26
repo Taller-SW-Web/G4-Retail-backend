@@ -193,7 +193,6 @@ public class GlobalExceptionHandler {
 
     /** Reutiliza el {@code X-Correlation-Id} que llega; si no llega, el backend lo genera. */
     private String correlacion(HttpServletRequest peticion) {
-        String recibido = peticion.getHeader(ENCABEZADO_CORRELACION);
-        return (recibido == null || recibido.isBlank()) ? UUID.randomUUID().toString() : recibido;
+        return pe.edu.unmsm.fisi.retail.config.gestionapi.Correlacion.de(peticion);
     }
 }

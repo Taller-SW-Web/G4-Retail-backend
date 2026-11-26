@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.ventas;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -45,7 +46,8 @@ public class PedidosVentasConfig {
         fabrica.setReadTimeout(Duration.ofMillis(timeoutMs));
 
         log.info("Consulta de pedidos (F6) conectada a Ventas (G5): url={} timeoutMs={}", urlVentas, timeoutMs);
-        return new PedidosVentasHttp(RestClient.builder().baseUrl(urlVentas).requestFactory(fabrica).build(),
+        return new PedidosVentasHttp(RestClient.builder().baseUrl(urlVentas).requestFactory(fabrica)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(),
                 tokenServicio);
     }
 }
