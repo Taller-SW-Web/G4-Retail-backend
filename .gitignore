@@ -38,5 +38,3 @@ build/
 application-local-secrets.properties
 *.log
 
-# SonarScanner
-.scannerwork/
