@@ -1,5 +1,7 @@
 package pe.edu.unmsm.fisi.retail.integracion.ventas;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -9,6 +11,8 @@ import org.springframework.web.client.RestClientResponseException;
 import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,12 +21,16 @@ import java.util.Optional;
  * <p>Cada llamada lleva {@code Authorization: Bearer} con el token de servicio de Seguridad (G7);
  * G5 exige el scope {@code ventas:pedidos:consultar}.</p>
  *
+ * <p>La búsqueda por documento (RF-16-DOC) exige además {@code ventas:pedidos:buscar-documento}.</p>
+ *
  * <p>Un {@code 404} (o {@code 400} por un id mal formado) se lee como "no existe". Un {@code 401} o
  * {@code 403} es {@code 503 VENTAS_CREDENCIAL_RECHAZADA}; una caída, un timeout o un {@code 5xx},
  * {@code 503 VENTAS_NO_DISPONIBLE}.</p>
  */
 @Slf4j
 public class PedidosVentasHttp implements PedidosVentasPort {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final RestClient restClient;
     private final TokenServicioG7 tokenServicio;
@@ -57,6 +65,51 @@ public class PedidosVentasHttp implements PedidosVentasPort {
             log.warn("Ventas (G5) no respondió al consultar el pedido {}: {}", pedidoId, e.getMessage());
             throw noDisponible();
         }
+    }
+
+    @Override
+    public List<PedidoResumenVentas> buscarPorDocumento(String documento) {
+        try {
+            JsonNode cuerpo = restClient.get()
+                    .uri(uri -> uri.path("/api/v1/pedidos").queryParam("buscar", documento).build())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenServicio.obtener())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .body(JsonNode.class);
+            return resultados(cuerpo);
+        } catch (RestClientResponseException e) {
+            int estado = e.getStatusCode().value();
+            if (estado == 404) {
+                return List.of();
+            }
+            log.warn("Ventas (G5) respondió {} a la búsqueda por documento", estado);
+            if (estado == 401 || estado == 403) {
+                throw new ServicioExternoNoDisponibleException("VENTAS_CREDENCIAL_RECHAZADA",
+                        "Ventas no aceptó la credencial de servicio de Retail para buscar por documento");
+            }
+            throw noDisponible();
+        } catch (RestClientException e) {
+            log.warn("Ventas (G5) no respondió a la búsqueda por documento: {}", e.getMessage());
+            throw noDisponible();
+        }
+    }
+
+    /** Acepta un arreglo o un objeto con {@code items}, {@code content} o {@code data}. */
+    private static List<PedidoResumenVentas> resultados(JsonNode cuerpo) {
+        if (cuerpo == null || cuerpo.isNull()) {
+            return List.of();
+        }
+        JsonNode lista = cuerpo.isArray() ? cuerpo
+                : cuerpo.has("items") ? cuerpo.get("items")
+                : cuerpo.has("content") ? cuerpo.get("content")
+                : cuerpo.get("data");
+        List<PedidoResumenVentas> resultado = new ArrayList<>();
+        if (lista != null && lista.isArray()) {
+            for (JsonNode nodo : lista) {
+                resultado.add(JSON.convertValue(nodo, PedidoResumenVentas.class));
+            }
+        }
+        return resultado;
     }
 
     @Override

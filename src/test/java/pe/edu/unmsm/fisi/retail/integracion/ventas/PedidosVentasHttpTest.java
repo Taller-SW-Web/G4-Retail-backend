@@ -11,6 +11,7 @@ import org.springframework.web.client.RestClient;
 import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -100,6 +101,72 @@ class PedidosVentasHttpTest {
                 .andRespond(withServerError());
 
         assertThatThrownBy(() -> adaptador.consultar("PED-2026-00412"))
+                .isInstanceOf(ServicioExternoNoDisponibleException.class)
+                .extracting("codigo").isEqualTo("VENTAS_NO_DISPONIBLE");
+    }
+
+    // ---- RF-16-DOC: GET /api/v1/pedidos?buscar= (contrato v0.5.2, §4.3 y §5.6) ----
+
+    @Test
+    @DisplayName("RF-16-DOC: busca por documento con ?buscar= y lee los campos que acordó G5")
+    void buscaPorDocumento() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer token-de-servicio"))
+                .andRespond(withSuccess("""
+                        {"items":[{"pedidoId":"PED-2026-00412","canal":"RETAIL","estado":"PAGADO","total":489.80,
+                                   "moneda":"PEN","fechaCreacion":"2026-11-06T15:30:00Z","nombreCliente":"Juan Pérez"}],
+                         "meta":{"total":1}}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<PedidoResumenVentas> resultado = adaptador.buscarPorDocumento("72345678");
+
+        assertThat(resultado).singleElement().satisfies(r -> {
+            assertThat(r.pedidoId()).isEqualTo("PED-2026-00412");
+            assertThat(r.estado()).isEqualTo("PAGADO");
+            assertThat(r.total()).isEqualByComparingTo("489.80");
+            assertThat(r.nombreCliente()).isEqualTo("Juan Pérez");
+        });
+        servidor.verify();
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: acepta también una respuesta en arreglo")
+    void buscaPorDocumentoConArreglo() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=20123456789"))
+                .andRespond(withSuccess("""
+                        [{"pedidoId":"PED-2026-00415","canal":"RETAIL","estado":"PAGADO","total":1159.60,
+                          "moneda":"PEN","fechaCreacion":"2026-11-07T10:00:00Z","nombreCliente":"Club Los Andes"}]
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(adaptador.buscarPorDocumento("20123456789")).extracting(PedidoResumenVentas::pedidoId)
+                .containsExactly("PED-2026-00415");
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: un 404 de Ventas es una búsqueda sin resultados")
+    void buscaPorDocumentoSinResultados() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=11111111")).andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThat(adaptador.buscarPorDocumento("11111111")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: sin el scope ventas:pedidos:buscar-documento (403) responde VENTAS_CREDENCIAL_RECHAZADA")
+    void buscaPorDocumentoSinScope() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678")).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThatThrownBy(() -> adaptador.buscarPorDocumento("72345678"))
+                .isInstanceOf(ServicioExternoNoDisponibleException.class)
+                .extracting("codigo").isEqualTo("VENTAS_CREDENCIAL_RECHAZADA");
+    }
+
+    @Test
+    @DisplayName("RF-16-DOC: un 5xx de Ventas responde VENTAS_NO_DISPONIBLE")
+    void buscaPorDocumentoVentasCaido() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678")).andRespond(withServerError());
+
+        assertThatThrownBy(() -> adaptador.buscarPorDocumento("72345678"))
                 .isInstanceOf(ServicioExternoNoDisponibleException.class)
                 .extracting("codigo").isEqualTo("VENTAS_NO_DISPONIBLE");
     }
