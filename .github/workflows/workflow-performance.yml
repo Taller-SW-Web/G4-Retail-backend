@@ -1,0 +1,72 @@
+name: Performance POS S14
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - scripts/performance/**
+      - .github/workflows/workflow-performance.yml
+permissions:
+  contents: read
+jobs:
+  carga:
+    name: Carga local reproducible (H2 y mocks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.2'
+      - run: node --test scripts/performance/*.test.mjs
+      - name: Verificar y empaquetar aplicación
+        run: bash ./mvnw -B verify
+      - name: Arranque, calentamiento y carga progresiva
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/performance
+          java -jar target/retail-0.0.1-SNAPSHOT.jar \
+            --spring.profiles.active=local,mock \
+            --retail.integracion.ventas.habilitado=false \
+            --retail.integracion.ventas.pickup.modo=memoria \
+            --retail.integracion.ventas.pedidos.modo=memoria \
+            --spring.jpa.show-sql=false \
+            --logging.level.pe.edu.unmsm.fisi.retail=WARN \
+            > target/performance/servidor.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          listo=false
+          for intento in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8080/api/v1/retail/health >/dev/null; then
+              listo=true
+              break
+            fi
+            kill -0 "$app_pid"
+            sleep 2
+          done
+          test "$listo" = true
+          node scripts/performance/pos.mjs
+      - name: Publicar mediciones y diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-s14-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/performance/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Mostrar interpretación
+        if: always()
+        run: |
+          if test -f target/performance/informe.md; then
+            cat target/performance/informe.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No se completó la medición. Revisar build, arranque o preflight; no equivale a aprobación.' >> "$GITHUB_STEP_SUMMARY"
+          fi
