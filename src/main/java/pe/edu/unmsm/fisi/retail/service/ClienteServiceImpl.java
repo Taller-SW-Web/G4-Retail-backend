@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.service;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.dto.ClienteAltaRapidaRequest;
 import pe.edu.unmsm.fisi.retail.dto.ClienteResponse;
@@ -22,10 +23,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Toda entrada pasa primero por {@link ValidadorDocumento} (RF-09): un documento con formato
  * invalido se rechaza con {@code 400 DATO_INVALIDO} antes de consultar o modificar el padron.</p>
  *
+ * <p>Es el modo {@code memoria} (por defecto) de {@code retail.integracion.clientes.modo}; con {@code g7}
+ * se usa {@link ClienteServiceG7} contra Seguridad.</p>
+ *
  * <p>Limite de la funcionalidad: no procesa ventas, precios, carritos de compra ni cobros de
  * dinero.</p>
  */
 @Service
+@ConditionalOnProperty(name = "retail.integracion.clientes.modo", havingValue = "memoria", matchIfMissing = true)
 public class ClienteServiceImpl implements ClienteService {
 
     /**
