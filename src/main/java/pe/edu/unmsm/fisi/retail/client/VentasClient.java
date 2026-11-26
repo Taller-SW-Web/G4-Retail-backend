@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.client;
 
+import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,6 +53,7 @@ public class VentasClient {
         this.restClient = builder
                 .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
 

@@ -159,7 +159,6 @@ public class SeguridadConfig {
     }
 
     private String correlacion(HttpServletRequest peticion) {
-        String recibido = peticion.getHeader("X-Correlation-Id");
-        return (recibido == null || recibido.isBlank()) ? UUID.randomUUID().toString() : recibido;
+        return pe.edu.unmsm.fisi.retail.config.gestionapi.Correlacion.de(peticion);
     }
 }
