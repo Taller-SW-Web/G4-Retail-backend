@@ -13,6 +13,7 @@ import pe.edu.unmsm.fisi.retail.exception.ServicioExternoNoDisponibleException;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.DisponibilidadComercial;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.FiltroCatalogo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.PaginaProductos;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Atributo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
@@ -92,6 +93,29 @@ class ProductosHttpTest {
         assertThat(primera.get(0).atributo("Talla")).contains("40");
         assertThat(segunda).isEqualTo(primera);
         servidor.verify();
+    }
+
+    @Test
+    @DisplayName("Acepta atributos con valor de cualquier tipo, como permite el esquema Atributo de G6")
+    void atributosConValorDeCualquierTipo() {
+        servidor.expect(requestTo(BASE + "/productos/PROD-102?canal=RETAIL"))
+                .andRespond(withSuccess("""
+                        {"product_id":"PROD-102","attributes":[{"caracteristica_id":"A","nombre":"Material","valor":{"es":"Malla"}}],
+                         "variants":[{"variant_id":"V1","sku":"POL-M-ROJ","images":[],
+                          "identifying_attributes":[{"caracteristica_id":"CAR-TALLA","nombre":"Talla","valor_id":"T-M","valor":"M"},
+                                                    {"caracteristica_id":"CAR-NUM","nombre":"Numero","valor":42}],
+                          "non_identifying_attributes":[{"caracteristica_id":"CAR-TEC","nombre":"Tecnologias","valor":["Dry","UV"]},
+                                                        {"caracteristica_id":"CAR-IMP","nombre":"Impermeable","valor":true},
+                                                        {"caracteristica_id":"CAR-MED","nombre":"Medidas","valor":{"largo":70}},
+                                                        {"caracteristica_id":"CAR-NUL","nombre":"Nota","valor":null}]}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        VarianteComercial variante = adaptador.listarVariantes("PROD-102").get(0);
+
+        assertThat(variante.atributo("Talla")).contains("M");
+        assertThat(variante.atributo("Numero")).contains("42");
+        assertThat(variante.nonIdentifyingAttributes()).extracting(Atributo::valor)
+                .containsExactly("Dry, UV", "true", "{\"largo\":70}", null);
     }
 
     @Test

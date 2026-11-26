@@ -194,7 +194,8 @@ public class ProductosHttp implements ProductosPort {
             throw new ServicioExternoNoDisponibleException("PRODUCTOS_NO_DISPONIBLE",
                     "Productos no pudo atender la solicitud. Reintente en unos segundos");
         } catch (RestClientException e) {
-            log.warn("Productos (G6) no respondió al {}: {}", operacion, e.getMessage());
+            log.warn("Productos (G6) no respondió al {}: {}{}", operacion, e.getMessage(),
+                    e.getMostSpecificCause() != e ? " | causa: " + e.getMostSpecificCause().getMessage() : "");
             throw new ServicioExternoNoDisponibleException("PRODUCTOS_NO_DISPONIBLE",
                     "Productos no respondió a tiempo. Reintente en unos segundos");
         }
