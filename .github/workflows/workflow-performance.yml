@@ -1,11 +1,7 @@
 name: Performance POS S14
 on:
+  workflow_call:
   workflow_dispatch:
-  pull_request:
-    branches: [develop, main]
-    paths:
-      - scripts/performance/**
-      - .github/workflows/workflow-performance.yml
 permissions:
   contents: read
 jobs:

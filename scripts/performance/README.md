@@ -11,8 +11,9 @@ Desde backend, con Java 21, Maven Wrapper y Node disponibles:
 ./scripts/performance/ejecutar-local.ps1
 ```
 
-En GitHub: Actions → **Performance POS S14** → Run workflow. También se ejecuta en PR
-que cambie el generador o su workflow. Descargar el artefacto `performance-s14-*`.
+En GitHub: Actions → **Performance POS S14** → Run workflow. También se ejecuta automáticamente
+después de aprobar integración en **Evidencias Backend S14**, tanto en PR como en despliegue
+normal a main. Descargar el artefacto `performance-s14-*`.
 Cada ejecución verifica y empaqueta el backend antes de medirlo.
 
 Si el backend ya está levantado en local/mocks con G5 deshabilitado:

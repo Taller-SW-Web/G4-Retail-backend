@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: '22.22.2'
       - name: Verificar herramientas de evidencia
-        run: node --test scripts/performance/*.test.mjs
+        run: node --test scripts/performance/*.test.mjs scripts/dast/*.test.mjs
       - name: Suite completa y paquete (H2)
         run: bash ./mvnw -B clean verify
       - name: Integración seleccionada (H2 y dobles HTTP)
@@ -56,5 +56,16 @@ jobs:
             target/surefire-reports/
             target/integration-reports/
             target/postgres-reports/
+            target/*.jar
           if-no-files-found: error
           retention-days: 30
+  performance:
+    name: Evidencia automática de performance S14
+    needs: integracion
+    uses: ./.github/workflows/workflow-performance.yml
+  dast:
+    name: DAST API local OWASP ZAP
+    needs: integracion
+    uses: ./.github/workflows/workflow-dast.yml
+    with:
+      artifact_name: backend-s14-${{ github.run_id }}-${{ github.run_attempt }}
