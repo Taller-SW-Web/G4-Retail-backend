@@ -67,20 +67,48 @@ public class PedidosVentasHttp implements PedidosVentasPort {
         }
     }
 
+    /** Página máxima que admite G5 en 1.4c. */
+    static final int TAMANO_PAGINA = 50;
+    /** Tope de páginas por búsqueda (500 pedidos), para no encadenar llamadas sin fin. */
+    static final int MAXIMO_PAGINAS = 10;
+
     @Override
     public List<PedidoResumenVentas> buscarPorDocumento(String documento) {
+        List<PedidoResumenVentas> resultado = new ArrayList<>();
+        int totalPaginas = 1;
+        for (int pagina = 0; pagina < totalPaginas && pagina < MAXIMO_PAGINAS; pagina++) {
+            JsonNode cuerpo = paginaDeBusqueda(documento, pagina);
+            if (cuerpo == null) {
+                break;
+            }
+            JsonNode contenido = cuerpo.get("contenido");
+            if (contenido != null && contenido.isArray()) {
+                for (JsonNode nodo : contenido) {
+                    resultado.add(JSON.convertValue(nodo, PedidoResumenVentas.class));
+                }
+            }
+            totalPaginas = cuerpo.path("totalPaginas").asInt(1);
+        }
+        return resultado;
+    }
+
+    /** {@code GET /api/v1/pedidos?buscar=&pagina=&tamano=} (1.4c de G5). {@code null} si G5 responde 404. */
+    private JsonNode paginaDeBusqueda(String documento, int pagina) {
         try {
-            JsonNode cuerpo = restClient.get()
-                    .uri(uri -> uri.path("/api/v1/pedidos").queryParam("buscar", documento).build())
+            return restClient.get()
+                    .uri(uri -> uri.path("/api/v1/pedidos")
+                            .queryParam("buscar", documento)
+                            .queryParam("pagina", pagina)
+                            .queryParam("tamano", TAMANO_PAGINA)
+                            .build())
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenServicio.obtener())
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
                     .body(JsonNode.class);
-            return resultados(cuerpo);
         } catch (RestClientResponseException e) {
             int estado = e.getStatusCode().value();
             if (estado == 404) {
-                return List.of();
+                return null;
             }
             log.warn("Ventas (G5) respondió {} a la búsqueda por documento", estado);
             if (estado == 401 || estado == 403) {
@@ -92,24 +120,6 @@ public class PedidosVentasHttp implements PedidosVentasPort {
             log.warn("Ventas (G5) no respondió a la búsqueda por documento: {}", e.getMessage());
             throw noDisponible();
         }
-    }
-
-    /** Acepta un arreglo o un objeto con {@code items}, {@code content} o {@code data}. */
-    private static List<PedidoResumenVentas> resultados(JsonNode cuerpo) {
-        if (cuerpo == null || cuerpo.isNull()) {
-            return List.of();
-        }
-        JsonNode lista = cuerpo.isArray() ? cuerpo
-                : cuerpo.has("items") ? cuerpo.get("items")
-                : cuerpo.has("content") ? cuerpo.get("content")
-                : cuerpo.get("data");
-        List<PedidoResumenVentas> resultado = new ArrayList<>();
-        if (lista != null && lista.isArray()) {
-            for (JsonNode nodo : lista) {
-                resultado.add(JSON.convertValue(nodo, PedidoResumenVentas.class));
-            }
-        }
-        return resultado;
     }
 
     @Override

@@ -105,25 +105,36 @@ class PedidosVentasHttpTest {
                 .extracting("codigo").isEqualTo("VENTAS_NO_DISPONIBLE");
     }
 
-    // ---- RF-16-DOC: GET /api/v1/pedidos?buscar= (contrato v0.5.2, §4.3 y §5.6) ----
+    // ---- RF-16-DOC: GET /api/v1/pedidos?buscar= (1.4c del contrato de G5; Retail v0.5.2, §5.6) ----
+
+    private static String pagina(int pagina, int totalPaginas, String... pedidos) {
+        StringBuilder contenido = new StringBuilder();
+        for (String id : pedidos) {
+            if (contenido.length() > 0) {
+                contenido.append(',');
+            }
+            contenido.append("""
+                    {"pedidoId":"%s","canal":"RETAIL","estado":"ENTREGADO","total":489.80,"moneda":"PEN",
+                     "fechaCreacion":"2026-11-06T15:30:00Z","nombreCliente":"Juan Pérez"}""".formatted(id));
+        }
+        return """
+                {"clienteId":null,"contenido":[%s],"pagina":%d,"totalPaginas":%d,"totalElementos":%d}
+                """.formatted(contenido, pagina, totalPaginas, pedidos.length);
+    }
 
     @Test
-    @DisplayName("RF-16-DOC: busca por documento con ?buscar= y lee los campos que acordó G5")
+    @DisplayName("RF-16-DOC: busca con ?buscar=, pide páginas de 50 y lee 'contenido' del formato de G5")
     void buscaPorDocumento() {
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678"))
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678&pagina=0&tamano=50"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header("Authorization", "Bearer token-de-servicio"))
-                .andRespond(withSuccess("""
-                        {"items":[{"pedidoId":"PED-2026-00412","canal":"RETAIL","estado":"PAGADO","total":489.80,
-                                   "moneda":"PEN","fechaCreacion":"2026-11-06T15:30:00Z","nombreCliente":"Juan Pérez"}],
-                         "meta":{"total":1}}
-                        """, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(pagina(0, 1, "PED-2026-00412"), MediaType.APPLICATION_JSON));
 
         List<PedidoResumenVentas> resultado = adaptador.buscarPorDocumento("72345678");
 
         assertThat(resultado).singleElement().satisfies(r -> {
             assertThat(r.pedidoId()).isEqualTo("PED-2026-00412");
-            assertThat(r.estado()).isEqualTo("PAGADO");
+            assertThat(r.estado()).isEqualTo("ENTREGADO");
             assertThat(r.total()).isEqualByComparingTo("489.80");
             assertThat(r.nombreCliente()).isEqualTo("Juan Pérez");
         });
@@ -131,22 +142,23 @@ class PedidosVentasHttpTest {
     }
 
     @Test
-    @DisplayName("RF-16-DOC: acepta también una respuesta en arreglo")
-    void buscaPorDocumentoConArreglo() {
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=20123456789"))
-                .andRespond(withSuccess("""
-                        [{"pedidoId":"PED-2026-00415","canal":"RETAIL","estado":"PAGADO","total":1159.60,
-                          "moneda":"PEN","fechaCreacion":"2026-11-07T10:00:00Z","nombreCliente":"Club Los Andes"}]
-                        """, MediaType.APPLICATION_JSON));
+    @DisplayName("RF-16-DOC: recorre todas las páginas que informa G5")
+    void buscaPorDocumentoVariasPaginas() {
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=20123456789&pagina=0&tamano=50"))
+                .andRespond(withSuccess(pagina(0, 2, "PED-2026-00001", "PED-2026-00002"), MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=20123456789&pagina=1&tamano=50"))
+                .andRespond(withSuccess(pagina(1, 2, "PED-2026-00003"), MediaType.APPLICATION_JSON));
 
         assertThat(adaptador.buscarPorDocumento("20123456789")).extracting(PedidoResumenVentas::pedidoId)
-                .containsExactly("PED-2026-00415");
+                .containsExactly("PED-2026-00001", "PED-2026-00002", "PED-2026-00003");
+        servidor.verify();
     }
 
     @Test
     @DisplayName("RF-16-DOC: un 404 de Ventas es una búsqueda sin resultados")
     void buscaPorDocumentoSinResultados() {
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=11111111")).andRespond(withStatus(HttpStatus.NOT_FOUND));
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=11111111&pagina=0&tamano=50"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
         assertThat(adaptador.buscarPorDocumento("11111111")).isEmpty();
     }
@@ -154,7 +166,8 @@ class PedidosVentasHttpTest {
     @Test
     @DisplayName("RF-16-DOC: sin el scope ventas:pedidos:buscar-documento (403) responde VENTAS_CREDENCIAL_RECHAZADA")
     void buscaPorDocumentoSinScope() {
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678")).andRespond(withStatus(HttpStatus.FORBIDDEN));
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678&pagina=0&tamano=50"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
 
         assertThatThrownBy(() -> adaptador.buscarPorDocumento("72345678"))
                 .isInstanceOf(ServicioExternoNoDisponibleException.class)
@@ -164,7 +177,8 @@ class PedidosVentasHttpTest {
     @Test
     @DisplayName("RF-16-DOC: un 5xx de Ventas responde VENTAS_NO_DISPONIBLE")
     void buscaPorDocumentoVentasCaido() {
-        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678")).andRespond(withServerError());
+        servidor.expect(requestTo(BASE + "/api/v1/pedidos?buscar=72345678&pagina=0&tamano=50"))
+                .andRespond(withServerError());
 
         assertThatThrownBy(() -> adaptador.buscarPorDocumento("72345678"))
                 .isInstanceOf(ServicioExternoNoDisponibleException.class)
