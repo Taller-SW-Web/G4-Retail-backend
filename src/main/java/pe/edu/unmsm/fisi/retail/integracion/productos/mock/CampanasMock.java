@@ -1,5 +1,6 @@
 package pe.edu.unmsm.fisi.retail.integracion.productos.mock;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import pe.edu.unmsm.fisi.retail.integracion.productos.CampanasPort;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.CampanaComercial;
@@ -10,14 +11,15 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Doble de las campañas de G6 (contrato v0.5, §6), mientras G6 confirma la ruta real.
+ * Doble de las campañas de G6 (contrato v0.5, §6), activo con el perfil {@code mock}. Sin ese
+ * perfil se usa {@link pe.edu.unmsm.fisi.retail.integracion.productos.CampanasHttp}.
  *
- * <p>No depende del perfil {@code mock} porque todavía no existe adaptador real: sin este bean la
- * torre de control no arrancaría. Los cupones coinciden con los que acepta el cálculo del carrito
- * (RF-11), para que el clic en la campaña funcione de punta a punta. Incluye a propósito una campaña
- * vencida y una de otro canal, que el servicio debe descartar.</p>
+ * <p>Los cupones coinciden con los que acepta el cálculo del carrito (RF-11), para que el clic en la
+ * campaña funcione de punta a punta. Incluye a propósito una campaña vencida y una de otro canal, que
+ * el servicio debe descartar.</p>
  */
 @Component
+@Profile("mock")
 public class CampanasMock implements CampanasPort {
 
     private static final OffsetDateTime INICIO_NOV = OffsetDateTime.parse("2026-11-01T05:00:00Z");
