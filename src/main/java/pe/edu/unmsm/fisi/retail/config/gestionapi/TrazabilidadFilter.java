@@ -18,7 +18,8 @@ import java.util.regex.Pattern;
  * Política de trazabilidad y versionado del API Management de Retail (contrato v0.5, §2.8).
  *
  * <ul>
- *   <li>Acepta el {@code X-Correlation-Id} de la petición o genera uno, y lo devuelve en la respuesta.</li>
+ *   <li>Acepta el {@code X-Correlation-Id} de la petición si es un UUID (G6 rechaza con {@code 400} los que
+ *   no lo son) o genera uno, y lo devuelve en la respuesta.</li>
  *   <li>Lo deja en el MDC: aparece en cada línea de log y {@link CorrelacionSaliente} lo propaga a G5,
  *   G6 y G7.</li>
  *   <li>Marca cada respuesta con {@code X-Api-Version: v1}.</li>
@@ -33,8 +34,9 @@ public class TrazabilidadFilter extends OncePerRequestFilter {
     public static final String ENCABEZADO_VERSION = "X-Api-Version";
     public static final String VERSION_ACTUAL = "v1";
 
-    /** Un id recibido solo se reutiliza si es razonable; si no, se genera otro (evita inyectar logs). */
-    private static final Pattern ID_VALIDO = Pattern.compile("^[A-Za-z0-9._:-]{1,64}$");
+    /** Un id recibido solo se reutiliza si es un UUID; si no, se genera otro (contrato v0.5.2, §2.8). */
+    static final Pattern ID_VALIDO = Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
     @Override
     protected void doFilterInternal(HttpServletRequest peticion, HttpServletResponse respuesta, FilterChain cadena)

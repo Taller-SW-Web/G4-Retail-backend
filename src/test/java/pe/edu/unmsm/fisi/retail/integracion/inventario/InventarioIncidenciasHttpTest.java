@@ -23,11 +23,11 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
-/** Adaptador real hacia Inventory de G6 (contrato v0.5, §5.12 y §2.9). */
+/** Adaptador real hacia Inventory de G6 (contrato v0.5.2, §5.12 y §2.9). La URL base ya termina en /api/v1. */
 @DisplayName("InventarioIncidenciasHttp — reporte de incidencias a Inventory (G6)")
 class InventarioIncidenciasHttpTest {
 
-    private static final String BASE = "https://g6-inventario.example";
+    private static final String BASE = "https://g6-inventario.example/api/v1";
     private static final String PAYLOAD = "{\"incidenciaId\":\"inc-1\",\"canal\":\"RETAIL\"}";
 
     private MockRestServiceServer servidor;
@@ -45,7 +45,7 @@ class InventarioIncidenciasHttpTest {
     @Test
     @DisplayName("Envía el payload con Bearer, Idempotency-Key = incidenciaId y X-Correlation-Id, y lee el id de Inventory")
     void enviaConCabeceras() {
-        servidor.expect(requestTo(BASE + "/api/v1/inventario/incidencias"))
+        servidor.expect(requestTo(BASE + "/inventario/incidencias"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Authorization", "Bearer token-de-servicio"))
                 .andExpect(header("Idempotency-Key", "inc-1"))
@@ -59,9 +59,81 @@ class InventarioIncidenciasHttpTest {
     }
 
     @Test
+    @DisplayName("Reemplaza el store_code de la tienda por el location_id de G6 al enviar (§5.12)")
+    void traduceLaTiendaAlLocationIdDeG6() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
+        MockRestServiceServer servidorG6 = MockRestServiceServer.bindTo(builder).build();
+        TokenServicioG7 token = mock(TokenServicioG7.class);
+        when(token.obtener()).thenReturn("token-de-servicio");
+        InventarioIncidenciasHttp conUbicaciones = new InventarioIncidenciasHttp(builder.build(), token,
+                InventarioIncidenciasHttp.ubicaciones("TIENDA-MIRAFLORES=aea2f0d8-e8c6-b09c-8e7a-b4a3630bc485"));
+
+        servidorG6.expect(requestTo(BASE + "/inventario/incidencias"))
+                .andExpect(content().json("{\"sku\":\"CAM-1\",\"location_id\":\"aea2f0d8-e8c6-b09c-8e7a-b4a3630bc485\"}"))
+                .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"incidencia_id\":\"INC-INV-1\",\"estado\":\"ABIERTA\"}"));
+
+        OutboxEvento evento = evento();
+        evento.setPayload("{\"sku\":\"CAM-1\",\"location_id\":\"TIENDA-MIRAFLORES\"}");
+        assertThat(conUbicaciones.enviar(evento)).isEqualTo("INC-INV-1");
+        servidorG6.verify();
+    }
+
+    @Test
+    @DisplayName("Una tienda sin mapeo, un cuerpo sin location_id o un cuerpo que no es JSON viajan sin cambios")
+    void sinMapeoAplicableElCuerpoNoCambia() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
+        MockRestServiceServer servidorG6 = MockRestServiceServer.bindTo(builder).build();
+        TokenServicioG7 token = mock(TokenServicioG7.class);
+        when(token.obtener()).thenReturn("token-de-servicio");
+        InventarioIncidenciasHttp conUbicaciones = new InventarioIncidenciasHttp(builder.build(), token,
+                InventarioIncidenciasHttp.ubicaciones("TIENDA-MIRAFLORES=uuid-miraflores"));
+
+        String otraTienda = "{\"location_id\":\"TIENDA-SURCO\"}";
+        String sinUbicacion = "{\"sku\":\"CAM-1\"}";
+        String noJson = "no-es-json";
+        for (String cuerpo : new String[] {otraTienda, sinUbicacion, noJson}) {
+            servidorG6.expect(requestTo(BASE + "/inventario/incidencias"))
+                    .andExpect(content().string(cuerpo))
+                    .andRespond(withStatus(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                            .body("{\"incidencia_id\":\"INC-INV-2\"}"));
+        }
+
+        for (String cuerpo : new String[] {otraTienda, sinUbicacion, noJson}) {
+            OutboxEvento evento = evento();
+            evento.setPayload(cuerpo);
+            assertThat(conUbicaciones.enviar(evento)).isEqualTo("INC-INV-2");
+        }
+        servidorG6.verify();
+        assertThat(InventarioIncidenciasHttp.ubicaciones(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("La configuración en modo g6 arma el adaptador real; sin URL o en memoria usa el doble")
+    void configuracionEligeElDestino() {
+        InventarioIncidenciasConfig config = new InventarioIncidenciasConfig();
+        String tokenUrl = "https://g7.example/api/v1/auth/token";
+
+        assertThat(config.inventarioIncidencias("g6", BASE, 1000, "TIENDA-MIRAFLORES=uuid", tokenUrl,
+                "modulo-retail", "secreto", "api-productos")).isInstanceOf(InventarioIncidenciasHttp.class);
+        assertThat(config.inventarioIncidencias("memoria", BASE, 1000, "", tokenUrl,
+                "modulo-retail", "secreto", "api-productos")).isInstanceOf(InventarioIncidenciasEnMemoria.class);
+        assertThat(config.inventarioIncidencias("g6", "", 1000, "", tokenUrl,
+                "modulo-retail", "secreto", "api-productos")).isInstanceOf(InventarioIncidenciasEnMemoria.class);
+    }
+
+    @Test
+    @DisplayName("Una tienda sin location_id configurado viaja tal cual (G6 la rechaza con 422 y queda FALLIDO)")
+    void tiendaSinMapeoViajaTalCual() {
+        assertThat(InventarioIncidenciasHttp.ubicaciones(" TIENDA-A = uuid-a , mal-formado ,"))
+                .containsExactlyEntriesOf(java.util.Map.of("TIENDA-A", "uuid-a"));
+        assertThat(InventarioIncidenciasHttp.ubicaciones("")).isEmpty();
+    }
+
+    @Test
     @DisplayName("Un 503 de Inventory es transitorio: el outbox lo reintenta")
     void errorServidorEsTransitorio() {
-        servidor.expect(requestTo(BASE + "/api/v1/inventario/incidencias")).andRespond(withServerError());
+        servidor.expect(requestTo(BASE + "/inventario/incidencias")).andRespond(withServerError());
 
         assertThatThrownBy(() -> adaptador.enviar(evento()))
                 .isInstanceOfSatisfying(EnvioOutboxException.class, e -> assertThat(e.esDefinitivo()).isFalse());
@@ -70,7 +142,7 @@ class InventarioIncidenciasHttpTest {
     @Test
     @DisplayName("Un 403 (scope no registrado) es definitivo: el evento pasa a FALLIDO para revisión")
     void prohibidoEsDefinitivo() {
-        servidor.expect(requestTo(BASE + "/api/v1/inventario/incidencias")).andRespond(withStatus(HttpStatus.FORBIDDEN));
+        servidor.expect(requestTo(BASE + "/inventario/incidencias")).andRespond(withStatus(HttpStatus.FORBIDDEN));
 
         assertThatThrownBy(() -> adaptador.enviar(evento()))
                 .isInstanceOfSatisfying(EnvioOutboxException.class, e -> assertThat(e.esDefinitivo()).isTrue());

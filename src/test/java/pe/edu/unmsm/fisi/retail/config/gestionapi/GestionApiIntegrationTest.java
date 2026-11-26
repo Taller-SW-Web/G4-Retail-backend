@@ -47,10 +47,18 @@ class GestionApiIntegrationTest {
     @Test
     @DisplayName("Reutiliza el X-Correlation-Id recibido y lo pone también en el cuerpo de los errores (401)")
     void correlacionRecibidaEnError() throws Exception {
-        mvc.perform(get(PERFIL).header("X-Correlation-Id", "prueba-correlacion-123"))
+        String id = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b";
+        mvc.perform(get(PERFIL).header("X-Correlation-Id", id))
                 .andExpect(status().isUnauthorized())
-                .andExpect(header().string("X-Correlation-Id", "prueba-correlacion-123"))
-                .andExpect(jsonPath("$.correlationId").value("prueba-correlacion-123"));
+                .andExpect(header().string("X-Correlation-Id", id))
+                .andExpect(jsonPath("$.correlationId").value(id));
+    }
+
+    @Test
+    @DisplayName("Un X-Correlation-Id que no es UUID se reemplaza: G6 rechaza con 400 los que no lo son (§2.8)")
+    void correlacionQueNoEsUuidSeReemplaza() throws Exception {
+        mvc.perform(get("/api/v1/retail/health").header("X-Correlation-Id", "demo-hito5-001"))
+                .andExpect(header().string("X-Correlation-Id", matchesPattern("[0-9a-f-]{36}")));
     }
 
     @Test

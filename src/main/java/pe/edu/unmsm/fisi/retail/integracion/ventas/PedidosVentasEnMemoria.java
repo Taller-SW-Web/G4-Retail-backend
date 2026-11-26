@@ -56,6 +56,19 @@ public class PedidosVentasEnMemoria implements PedidosVentasPort {
         return Optional.ofNullable(pedidos.get(pedidoId));
     }
 
+    /** Imita a G5: solo pedidos {@code RETAIL} o de recojo en tienda del titular. */
+    @Override
+    public List<PedidoResumenVentas> buscarPorDocumento(String documento) {
+        return pedidos.values().stream()
+                .filter(p -> p.contacto() != null && documento != null && documento.equals(p.contacto().numeroDocumento()))
+                .filter(p -> "RETAIL".equals(p.canal())
+                        || (p.envio() != null && "RECOJO_TIENDA".equals(p.envio().modalidad())))
+                .map(p -> new PedidoResumenVentas(p.pedidoId(), p.canal(), p.estado(),
+                        p.pago() == null ? null : p.pago().total(), p.pago() == null ? null : p.pago().moneda(),
+                        p.fechaCreacion(), p.contacto().nombreCompleto()))
+                .toList();
+    }
+
     @Override
     public String origen() {
         return "EN_MEMORIA";

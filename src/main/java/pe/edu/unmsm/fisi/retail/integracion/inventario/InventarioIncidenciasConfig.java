@@ -36,6 +36,7 @@ public class InventarioIncidenciasConfig {
             @Value("${retail.integracion.inventario.modo:memoria}") String modo,
             @Value("${retail.integracion.inventario.url:}") String url,
             @Value("${retail.integracion.inventario.timeout-ms:10000}") int timeoutMs,
+            @Value("${retail.integracion.inventario.ubicaciones:}") String ubicaciones,
             @Value("${retail.integracion.g7.token-url:https://g7-auth-service.onrender.com/api/v1/auth/token}") String tokenUrl,
             @Value("${retail.integracion.g7.client-id:modulo-retail}") String clientId,
             @Value("${retail.integracion.g7.client-secret:}") String clientSecret,
@@ -56,6 +57,7 @@ public class InventarioIncidenciasConfig {
 
         log.info("Incidencias F12 → Inventory real de G6: url={} audiencia={}", url, audiencia);
         return new InventarioIncidenciasHttp(RestClient.builder().baseUrl(url).requestFactory(fabrica)
-                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(), token);
+                .requestInterceptor(CorrelacionSaliente.INSTANCIA).build(), token,
+                InventarioIncidenciasHttp.ubicaciones(ubicaciones));
     }
 }

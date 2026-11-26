@@ -1,7 +1,8 @@
 package pe.edu.unmsm.fisi.retail.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.dto.DetallePedidoHistoricoResponse;
 import pe.edu.unmsm.fisi.retail.dto.DetallePedidoHistoricoResponse.Cliente;
@@ -12,6 +13,7 @@ import pe.edu.unmsm.fisi.retail.dto.PedidoResumenDto;
 import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.exception.ParametroInvalidoException;
 import pe.edu.unmsm.fisi.retail.exception.RecursoNoEncontradoException;
+import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoResumenVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidoVentas;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.PedidosVentasPort;
 import pe.edu.unmsm.fisi.retail.integracion.ventas.RegistroPedidosMostrador;
@@ -42,16 +44,16 @@ import java.util.regex.Pattern;
  * <p>Los pedidos y su historial son de Ventas (G5); aquí solo se filtran, se ordenan y se pasan a la
  * hora de Lima. Por código se consulta el pedido directo en Ventas.</p>
  *
- * <p>Por DNI/RUC solo se buscan las ventas registradas en este mostrador durante la ejecución actual
- * del servicio ({@link RegistroPedidosMostrador}). El histórico completo es RF-16-DOC (spec F6 §3.1),
- * pendiente del acuerdo de acceso con G5.</p>
+ * <p>Por DNI/RUC (RF-16-DOC, contrato v0.5.2, §5.6) depende de {@code retail.pedidos.busqueda-documento}:
+ * {@code g5} busca en Ventas con {@code GET /api/v1/pedidos?buscar=}; {@code registro} (por defecto, hasta
+ * que G7 asigne el scope) solo busca las ventas de este mostrador en la ejecución actual
+ * ({@link RegistroPedidosMostrador}).</p>
  *
  * <p>Ambas consultas exigen un perfil activo de tienda {@code VENDEDOR} o {@code SUPERVISOR}
  * (contrato §2.4 y §5.6); si no, {@code 403}.</p>
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class HistorialPedidosService {
 
     static final ZoneId LIMA = ZoneId.of("America/Lima");
@@ -62,6 +64,23 @@ public class HistorialPedidosService {
     private final PedidosVentasPort ventas;
     private final RegistroPedidosMostrador registro;
     private final PersonalTiendaRepository personalTiendaRepository;
+    private final boolean busquedaDocumentoEnVentas;
+
+    /** Búsqueda por documento solo en el registro local (comportamiento del Hito 4). */
+    public HistorialPedidosService(PedidosVentasPort ventas, RegistroPedidosMostrador registro,
+                                   PersonalTiendaRepository personalTiendaRepository) {
+        this(ventas, registro, personalTiendaRepository, "registro");
+    }
+
+    @Autowired
+    public HistorialPedidosService(PedidosVentasPort ventas, RegistroPedidosMostrador registro,
+                                   PersonalTiendaRepository personalTiendaRepository,
+                                   @Value("${retail.pedidos.busqueda-documento:registro}") String busquedaDocumento) {
+        this.ventas = ventas;
+        this.registro = registro;
+        this.personalTiendaRepository = personalTiendaRepository;
+        this.busquedaDocumentoEnVentas = "g5".equalsIgnoreCase(busquedaDocumento == null ? "" : busquedaDocumento.trim());
+    }
 
     /**
      * RF-16: pedidos por código o por documento, del más reciente al más antiguo. Por documento solo
@@ -92,14 +111,24 @@ public class HistorialPedidosService {
             throw new ParametroInvalidoException("PARAMETRO_INVALIDO", "size", "El tamano debe estar entre 1 y 100");
         }
 
-        List<PedidoVentas> encontrados = codigo != null
-                ? ventas.consultar(codigo).stream()
+        List<PedidoResumenDto> encontrados;
+        if (codigo != null) {
+            encontrados = ventas.consultar(codigo).stream()
                     .filter(p -> documento == null || documento.equals(documentoDe(p)))
-                    .toList()
-                : registro.pedidosDe(documento).stream()
+                    .map(this::resumen)
+                    .toList();
+        } else if (busquedaDocumentoEnVentas) {
+            encontrados = ventas.buscarPorDocumento(documento).stream()
+                    .filter(Objects::nonNull)
+                    .map(HistorialPedidosService::resumenDeBusqueda)
+                    .toList();
+        } else {
+            encontrados = registro.pedidosDe(documento).stream()
                     .map(ventas::consultar)
                     .flatMap(Optional::stream)
+                    .map(this::resumen)
                     .toList();
+        }
 
         if (encontrados.isEmpty()) {
             throw new RecursoNoEncontradoException("PEDIDO_NO_ENCONTRADO",
@@ -107,9 +136,8 @@ public class HistorialPedidosService {
         }
 
         List<PedidoResumenDto> ordenados = encontrados.stream()
-                .sorted(Comparator.comparing((PedidoVentas p) -> instante(p.fechaCreacion()),
+                .sorted(Comparator.comparing((PedidoResumenDto p) -> instante(p.fechaCreacion()),
                         Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(this::resumen)
                 .toList();
 
         int desde = (int) Math.min((long) page * size, ordenados.size());
@@ -180,6 +208,10 @@ public class HistorialPedidosService {
     private PedidoResumenDto resumen(PedidoVentas p) {
         BigDecimal total = p.pago() == null ? null : p.pago().total();
         return new PedidoResumenDto(p.pedidoId(), p.canal(), enLima(p.fechaCreacion()), p.estado(), total);
+    }
+
+    private static PedidoResumenDto resumenDeBusqueda(PedidoResumenVentas p) {
+        return new PedidoResumenDto(p.pedidoId(), p.canal(), enLima(p.fechaCreacion()), p.estado(), p.total());
     }
 
     private static Linea linea(PedidoVentas.Item item) {
