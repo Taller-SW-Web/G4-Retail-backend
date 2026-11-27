@@ -1,6 +1,10 @@
 name: Performance POS S14
 on:
   workflow_call:
+    inputs:
+      artifact_name:
+        type: string
+        default: ""
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,6 +35,9 @@ jobs:
           mkdir -p target/performance
           java -jar target/retail-0.0.1-SNAPSHOT.jar \
             --spring.profiles.active=local,mock \
+            --retail.seguridad.jwks-uri=http://127.0.0.1:9/jwks \
+            --retail.integracion.g7.token-url=http://127.0.0.1:9/token \
+            --retail.integracion.ventas.url=http://127.0.0.1:9 \
             --retail.integracion.ventas.habilitado=false \
             --retail.integracion.ventas.pickup.modo=memoria \
             --retail.integracion.ventas.pedidos.modo=memoria \

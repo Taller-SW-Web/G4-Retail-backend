@@ -12,7 +12,7 @@ permissions:
 jobs:
   preparar:
     name: Empaquetar aplicación para DAST manual
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ inputs.artifact_name == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -60,7 +60,7 @@ jobs:
       - name: Descargar aplicación ya empaquetada
         uses: actions/download-artifact@v4
         with:
-          name: ${{ github.event_name == 'workflow_dispatch' && format('backend-dast-{0}-{1}', github.run_id, github.run_attempt) || inputs.artifact_name }}
+          name: ${{ inputs.artifact_name == '' && format('backend-dast-{0}-{1}', github.run_id, github.run_attempt) || inputs.artifact_name }}
           path: target/dast-input
       - name: Arrancar instancia efímera aislada
         id: aplicacion
@@ -74,6 +74,9 @@ jobs:
             --server.address=127.0.0.1 \
             --server.port=8080 \
             --spring.profiles.active=local,mock \
+            --retail.seguridad.jwks-uri=http://127.0.0.1:9/jwks \
+            --retail.integracion.g7.token-url=http://127.0.0.1:9/token \
+            --retail.integracion.ventas.url=http://127.0.0.1:9 \
             --retail.integracion.ventas.habilitado=false \
             --retail.integracion.ventas.pickup.modo=memoria \
             --retail.integracion.ventas.pedidos.modo=memoria \
@@ -99,7 +102,7 @@ jobs:
           const { createHmac } = require('node:crypto');
           const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
           const issuedAt = Math.floor(Date.now() / 1000);
-          const unsignedToken = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: 'bbbbbbbb-0000-0000-0000-000000000001', iat: issuedAt, exp: issuedAt + 600 })}`;
+          const unsignedToken = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: 'bbbbbbbb-0000-0000-0000-000000000001', iat: issuedAt, exp: issuedAt + 1800 })}`;
           const signature = createHmac('sha256', 'clave-de-desarrollo-g4-retail-solo-para-la-semana-8').update(unsignedToken).digest('base64url');
           process.stdout.write(`${unsignedToken}.${signature}`);
           NODE
@@ -144,11 +147,13 @@ jobs:
             --sha "$GITHUB_SHA" \
             --outcome "${{ steps.zap.outcome }}" \
             --image "$image_reference"
+          resumen_status=$?
           for report in report_html.html report_json.json report_md.md; do
             if test -f "$report"; then
               cp "$report" target/zap/"$report"
             fi
           done
+          exit "$resumen_status"
       - name: Publicar evidencia DAST y diagnóstico
         if: always()
         uses: actions/upload-artifact@v4

@@ -13,6 +13,8 @@ run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }}
 permissions:
   contents: write
   actions: read
+  security-events: write
+  pull-requests: write
 jobs:
   evidence:
     name: Evidencias de integración S14

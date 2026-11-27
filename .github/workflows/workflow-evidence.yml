@@ -62,10 +62,30 @@ jobs:
   performance:
     name: Evidencia automática de performance S14
     needs: integracion
+    if: ${{ github.event_name != 'pull_request' || github.base_ref == 'main' }}
     uses: ./.github/workflows/workflow-performance.yml
+    with:
+      artifact_name: backend-s14-${{ github.run_id }}-${{ github.run_attempt }}
   dast:
     name: DAST API local OWASP ZAP
     needs: integracion
+    if: ${{ github.event_name != 'pull_request' || github.base_ref == 'main' }}
     uses: ./.github/workflows/workflow-dast.yml
     with:
       artifact_name: backend-s14-${{ github.run_id }}-${{ github.run_attempt }}
+  evidence-gate:
+    name: Gate de evidencia por rama
+    needs: [integracion, performance, dast]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EXTENDED: ${{ github.event_name != 'pull_request' || github.base_ref == 'main' }}
+        with:
+          script: |
+            const n = JSON.parse(process.env.RESULTS);
+            const required = process.env.EXTENDED === 'true' ? ['integracion','performance','dast'] : ['integracion'];
+            if (required.some(id => n[id]?.result !== 'success')) core.setFailed('Evidencia obligatoria incompleta.');
+            await core.summary.addTable([['Control','Resultado'], ...Object.entries(n).map(([k,v])=>[k,v.result])]).write();

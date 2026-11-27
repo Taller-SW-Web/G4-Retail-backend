@@ -27,3 +27,30 @@ jobs:
       sonar_host_url: ${{ vars.SONAR_HOST_URL }}
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  pr-gate:
+    name: pr-gate
+    needs: [evidence, quality]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const results = JSON.parse(process.env.RESULTS);
+            const pass = ['evidence', 'quality'].every(id => results[id]?.result === 'success');
+            fs.writeFileSync('gate-result.json', JSON.stringify({ sha: context.sha,
+              run_id: context.runId, attempt: process.env.GITHUB_RUN_ATTEMPT, pass, results }, null, 2));
+            await core.summary.addHeading(pass ? 'GO validaci?n PR' : 'NO-GO validaci?n PR')
+              .addTable([['Control', 'Estado'], ...Object.entries(results).map(([k,v]) => [k,v.result])]).write();
+            if (!pass) core.setFailed('Controles obligatorios incompletos o fallidos.');
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-gate-${{ github.run_attempt }}
+          path: gate-result.json
+          if-no-files-found: error
