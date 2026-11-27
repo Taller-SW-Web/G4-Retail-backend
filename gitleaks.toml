@@ -1,0 +1,16 @@
+# Configuración de Gitleaks para el job "Secrets and Full SCA" de devsecops-templates.
+# Mantiene las reglas por defecto y exime solo hallazgos revisados que no son credenciales reales.
+title = "G4-Retail-backend Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fragmentos de JWT sin firma (header.payload) de un test de SeguridadConfig del 17/10; no son credenciales y ya no están en el archivo"
+condition = "AND"
+commits = [
+    "9fe8a9f2604b4ce7e3f923679e2f92c96c5e9df9",
+]
+paths = [
+    '''src/test/java/pe/edu/unmsm/fisi/retail/config/SeguridadConfigTest\.java''',
+]
