@@ -35,7 +35,8 @@ class ActaDiscrepanciaServiceTest {
 
     private static final String SUPERVISOR = "bbbbbbbb-0000-0000-0000-000000000004";
     private static final String VENDEDOR = "bbbbbbbb-0000-0000-0000-000000000001";
-    private static final String TIENDA = "11111111-1111-1111-1111-111111111111";
+    /** Codigo de sucursal de la tienda del supervisor: el perfil guarda el UUID 1111..., la incidencia el codigo. */
+    private static final String TIENDA = "TIENDA-MIRAFLORES";
 
     @Autowired private MockMvc mvc;
     @Autowired private JdbcClient jdbc;

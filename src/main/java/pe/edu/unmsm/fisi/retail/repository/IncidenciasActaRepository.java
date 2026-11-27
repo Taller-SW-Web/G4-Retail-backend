@@ -44,10 +44,14 @@ public class IncidenciasActaRepository {
                 .list();
     }
 
-    /** Cierra las incidencias con el acta: nuevo estado y el acta que las despacho. */
+    /**
+     * Cierra las incidencias con el acta: nuevo estado y el acta que las despacho, en una sola sentencia
+     * (el CHECK {@code chk_incidencia_acta_coherente} no admite {@code acta_id} con la prenda aun en
+     * cuarentena). Fija {@code updated_at} porque por SQL no corre el {@code @PreUpdate} de la entidad.
+     */
     public void liquidar(Collection<UUID> ids, UUID actaId, String estado) {
         jdbc.sql("""
-                UPDATE RET_INCIDENCIA_INVENTARIO SET estado_cuarentena = :estado, acta_id = :acta
+                UPDATE RET_INCIDENCIA_INVENTARIO SET estado_cuarentena = :estado, acta_id = :acta, updated_at = CURRENT_TIMESTAMP
                 WHERE id_incidencia IN (:ids)
                 """)
                 .param("estado", estado)

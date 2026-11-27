@@ -19,5 +19,8 @@ CREATE TABLE IF NOT EXISTS RET_INCIDENCIA_INVENTARIO (
     acta_id                 UUID,
     intentos_reporte        INTEGER NOT NULL DEFAULT 0,
     ultimo_error_reporte    VARCHAR(1000),
-    updated_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Igual que en Supabase: una prenda con acta ya salio de la cuarentena.
+    CONSTRAINT chk_incidencia_acta_coherente
+        CHECK (acta_id IS NULL OR estado_cuarentena IN ('DERIVADO_ALMACEN', 'BAJA_DEFINITIVA'))
 );

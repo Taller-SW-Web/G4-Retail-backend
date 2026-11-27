@@ -45,14 +45,17 @@ public class ActaDiscrepanciaService {
     private final PersonalTiendaRepository personal;
     private final ActaDiscrepanciaRepository actas;
     private final IncidenciasActaRepository incidencias;
+    private final CodigosSucursal codigosSucursal;
     private final GeneradorNumeroActa numerador;
     private final Clock reloj;
 
     public ActaDiscrepanciaService(PersonalTiendaRepository personal, ActaDiscrepanciaRepository actas,
-                                   IncidenciasActaRepository incidencias, Clock reloj) {
+                                   IncidenciasActaRepository incidencias, CodigosSucursal codigosSucursal,
+                                   Clock reloj) {
         this.personal = personal;
         this.actas = actas;
         this.incidencias = incidencias;
+        this.codigosSucursal = codigosSucursal;
         this.reloj = reloj;
         this.numerador = new GeneradorNumeroActa(reloj, actas::siguienteCorrelativo);
     }
@@ -67,8 +70,11 @@ public class ActaDiscrepanciaService {
                     "Selecciona al menos una prenda en cuarentena para emitir el acta");
         }
 
+        // La incidencia guarda el codigo de sucursal (TIENDA-...), no el UUID del perfil.
+        String tienda = codigosSucursal.codigoDe(supervisor.getTiendaId());
+
         // En el orden en que el supervisor las eligio: asi salen en el acta impresa.
-        Map<UUID, IncidenciasActaRepository.Incidencia> porId = incidencias.bloquear(ids, supervisor.getTiendaId())
+        Map<UUID, IncidenciasActaRepository.Incidencia> porId = incidencias.bloquear(ids, tienda)
                 .stream().collect(Collectors.toMap(IncidenciasActaRepository.Incidencia::id, Function.identity()));
         List<IncidenciasActaRepository.Incidencia> encontradas = ids.stream()
                 .map(porId::get).filter(Objects::nonNull).toList();
@@ -86,7 +92,7 @@ public class ActaDiscrepanciaService {
                 ? null : peticion.observaciones().trim();
         ActaDiscrepancia acta = actas.save(ActaDiscrepancia.builder()
                 .numeroActa(numerador.siguiente())
-                .tiendaId(supervisor.getTiendaId())
+                .tiendaId(tienda)
                 .supervisorId(usuarioId)
                 .tipoDestino(peticion.tipoDestino())
                 .observaciones(observaciones)
