@@ -13,6 +13,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -104,6 +106,18 @@ class ActaDiscrepanciaServiceTest {
     }
 
     @Test
+    @DisplayName("CA-RF34-04: sin el campo incidenciasIds tambien responde 400 LISTA_VACIA, no 500")
+    void sinCampoIncidencias() throws Exception {
+        mvc.perform(post("/api/v1/retail/inventario/actas-merma").with(jwt().jwt(j -> j.subject(SUPERVISOR)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"tipoDestino":"DEVOLUCION_CENTRAL"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LISTA_VACIA"));
+    }
+
+    @Test
     @DisplayName("Una prenda que Inventory aun no acepta (PENDIENTE_REPORTE) no entra: 409 y nada cambia")
     void pendienteDeReporteNoEntra() throws Exception {
         UUID lista = incidencia("POLTEC-M-BLA", "MANCHADO_PROBADOR", "EN_CUARENTENA", TIENDA);
@@ -171,8 +185,12 @@ class ActaDiscrepanciaServiceTest {
                 .param(id).query(String.class).single();
     }
 
+    private static final Pattern NUMERO_ACTA = Pattern.compile("\"actaNumero\":\"([^\"]+)\"");
+
     private static String numero(String respuesta) {
-        return respuesta.replaceAll(".*\"actaNumero\":\"([^\"]+)\".*", "$1");
+        Matcher m = NUMERO_ACTA.matcher(respuesta);
+        assertThat(m.find()).as("la respuesta trae actaNumero").isTrue();
+        return m.group(1);
     }
 
     private MockHttpServletRequestBuilder emitir(String usuario, String ids, String destino) {

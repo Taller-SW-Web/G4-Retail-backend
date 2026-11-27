@@ -63,7 +63,11 @@ public class ActaDiscrepanciaService {
     @Transactional
     public ActaEmitidaResponse emitir(UUID usuarioId, EmisionActaRequest peticion) {
         PersonalTienda supervisor = supervisorActivo(usuarioId);
-        Set<UUID> ids = peticion.incidenciasIds() == null ? Set.of() : new LinkedHashSet<>(peticion.incidenciasIds());
+        // LinkedHashSet mutable tambien sin el campo: Set.of() no admite remove y daba 500 en vez de LISTA_VACIA.
+        Set<UUID> ids = new LinkedHashSet<>();
+        if (peticion.incidenciasIds() != null) {
+            ids.addAll(peticion.incidenciasIds());
+        }
         ids.remove(null);
         if (ids.isEmpty()) {
             throw new ParametroInvalidoException("LISTA_VACIA", "incidenciasIds",
