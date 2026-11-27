@@ -21,6 +21,8 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -59,6 +61,14 @@ public class CarritoService {
         this.productos = productos;
     }
 
+    /** Cuarentena local de F12 (RF-33). Nula en las pruebas que solo prueban el cálculo. */
+    private CuarentenaService cuarentena;
+
+    @Autowired(required = false)
+    public void setCuarentena(CuarentenaService cuarentena) {
+        this.cuarentena = cuarentena;
+    }
+
     /** Para pruebas unitarias del cálculo: toma el precio del item. */
     public CarritoService(PromocionesPort promociones) {
         this.promociones = promociones;
@@ -68,6 +78,27 @@ public class CarritoService {
     /** Para pruebas unitarias: usa el doble de promociones con los cupones de prueba. */
     public CarritoService() {
         this(new PromocionesEnMemoria());
+    }
+
+    /**
+     * Calcula los totales del carrito del vendedor, rechazando antes las prendas en cuarentena (F12, RF-33).
+     *
+     * <p>Un SKU con una incidencia activa en la tienda del vendedor ({@code PENDIENTE_REPORTE} o
+     * {@code EN_CUARENTENA}) responde {@code 422 SKU_EN_CUARENTENA} (CA-RF33-02), aunque la SPA se
+     * salte el bloqueo del catálogo.</p>
+     *
+     * @param usuarioId vendedor del token; sin vendedor no hay tienda y no se aplica la cuarentena
+     */
+    public CalculoCarritoResponse calcularTotales(CalculoCarritoRequest request, UUID usuarioId) {
+        if (cuarentena != null && request != null && request.items() != null && !request.items().isEmpty()) {
+            List<String> skus = request.items().stream().map(CalculoCarritoRequest.ItemCarritoCalculoDto::sku).toList();
+            Set<String> bloqueados = cuarentena.skusBloqueados(usuarioId, skus);
+            if (!bloqueados.isEmpty()) {
+                throw new ReglaNegocioException("SKU_EN_CUARENTENA",
+                        "PRODUCTO BLOQUEADO POR CUARENTENA: " + String.join(", ", new TreeSet<>(bloqueados)));
+            }
+        }
+        return calcularTotales(request);
     }
 
     /**
