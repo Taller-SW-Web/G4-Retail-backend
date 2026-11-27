@@ -9,7 +9,10 @@ const nombresRiesgo = new Map([
 ]);
 
 export function parsearReporte(contenido) {
-  return JSON.parse(contenido.replace(/^\uFEFF/, ''));
+  const reporte = JSON.parse(contenido.replace(/^\uFEFF/, ''));
+  if (!Array.isArray(reporte?.site) || reporte.site.length === 0 ||
+      reporte.site.some(s => !Array.isArray(s.alerts))) throw new Error('Reporte ZAP sin sitios v?lidos');
+  return reporte;
 }
 
 export function resumirAlertas(reporte) {
@@ -79,6 +82,7 @@ async function ejecutar() {
     errorReporte = error.code === 'ENOENT' ? 'archivo ausente' : 'archivo inválido';
   }
 
+  if (errorReporte || opciones.outcome !== 'success') process.exitCode = 1;
   await mkdir(dirname(opciones.output), { recursive: true });
   await writeFile(opciones.output, crearResumen({
     sha: opciones.sha,
