@@ -68,6 +68,18 @@ public interface ProductosPort {
      * Nombre de cada marca por su {@code marca_id} (G6: {@code GET /marcas}). Vacío si la fuente no publica
      * nombres o no responde: el catálogo muestra entonces el id.
      */
+    /**
+     * Variantes de varios productos, por id de producto y en el mismo orden. El adaptador real las
+     * pide en paralelo; esta versión, una tras otra.
+     */
+    default Map<String, List<VarianteComercial>> variantesDe(List<String> productoIds) {
+        Map<String, List<VarianteComercial>> resultado = new java.util.LinkedHashMap<>();
+        for (String id : productoIds) {
+            resultado.computeIfAbsent(id, this::listarVariantes);
+        }
+        return resultado;
+    }
+
     default Map<String, String> nombresDeMarcas() {
         return Map.of();
     }

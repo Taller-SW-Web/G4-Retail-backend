@@ -2,8 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crearResumen, parsearReporte, resumirAlertas } from './resumir-zap.mjs';
 
+test('un JSON vacío o sin sitios no acredita un escaneo', () => {
+  for (const value of ['{}', '{"site":[]}', '{"site":[{}]}']) {
+    assert.throws(() => parsearReporte(value));
+  }
+});
+
 test('acepta el JSON de ZAP aunque tenga una marca BOM', () => {
-  assert.deepEqual(parsearReporte('\uFEFF{"site":[]}'), { site: [] });
+  assert.deepEqual(parsearReporte('\uFEFF{"site":[{"alerts":[]}]}'), { site: [{ alerts: [] }] });
 });
 
 test('resume alertas por riesgo e instancias del reporte de ZAP', () => {
