@@ -113,6 +113,14 @@ public class CatalogoService {
     }
 
     /**
+     * Producto al que pertenece un SKU. F9 lo usa para saber si un cambio es del mismo modelo (mismo
+     * producto, otra talla o color).
+     */
+    public Optional<String> productoDelSku(String sku) {
+        return buscarProductoDelSku(sku).map(ProductoComercial::productId);
+    }
+
+    /**
      * Encuentra a que producto pertenece un SKU.
      *
      * <p>G6 no publica una busqueda inversa de SKU a producto, asi que se recorre el catalogo. Con

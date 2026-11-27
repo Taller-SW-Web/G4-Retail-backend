@@ -1,15 +1,16 @@
 package pe.edu.unmsm.fisi.retail.service;
 
-import pe.edu.unmsm.fisi.retail.dto.RegistroCambioRequest;
-import pe.edu.unmsm.fisi.retail.dto.ValeCompraResponse;
+import pe.edu.unmsm.fisi.retail.dto.CambioDirectoRequest;
+import pe.edu.unmsm.fisi.retail.dto.CambioDirectoResponse;
 import pe.edu.unmsm.fisi.retail.dto.ValidarCambioResponse;
 
 import java.util.UUID;
 
 /**
- * Cambios de prenda y vales de compra en mostrador (F9: RF-23, RF-24 y RF-25).
+ * Cambio directo de prenda en mostrador (F9: RF-23, RF-24 y RF-25, contrato 5.9).
  *
- * <p>Es 100% autonomo de Retail: no llama a Ventas ni a Productos y no mueve stock.</p>
+ * <p>Desde la Semana 14 reemplaza al vale: el cliente devuelve una prenda y se lleva otra en el
+ * momento, pagando la diferencia si cuesta mas.</p>
  */
 public interface CambioService {
 
@@ -20,10 +21,17 @@ public interface CambioService {
     ValidarCambioResponse validar(UUID usuarioId, String boletaNumero);
 
     /**
-     * Registra el cambio con su inspeccion fisica (RF-24) y emite el vale de compra (RF-25).
+     * Registra el cambio directo con su inspeccion (RF-24) en una sola transaccion (RF-25).
      *
      * @param usuarioId      vendedor autenticado, el {@code sub} del token
-     * @param idempotencyKey repetir la misma clave devuelve el mismo vale, en vez de emitir otro
+     * @param idempotencyKey repetir la misma clave devuelve el mismo cambio, sin consumir mas unidades
      */
-    ValeCompraResponse registrar(UUID usuarioId, String idempotencyKey, RegistroCambioRequest peticion);
+    CambioDirectoResponse registrar(UUID usuarioId, String idempotencyKey, CambioDirectoRequest peticion);
+
+    /**
+     * Reenvia a Ventas los pedidos de los cambios {@code PENDIENTE}, con su misma clave.
+     *
+     * @return cuantos pasaron a {@code CONFIRMADO}
+     */
+    int reintentarPedidosPendientes();
 }
