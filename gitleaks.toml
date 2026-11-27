@@ -1,0 +1,43 @@
+# gitleaks.toml — Política de secretos para G4-Retail-backend
+# Ref: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+#
+# Criterio de exención documentado (SUPER_PROMPT regla 198):
+#   - Fixtures de test intencionados: tokens JWT y claves HMAC usadas únicamente
+#     en pruebas unitarias/integración contra mocks locales, nunca en producción.
+#   - Commits históricos donde los JWTs se introdujeron en archivos de test y
+#     luego se reemplazaron por generación dinámica con Nimbus JOSE.
+#   - Ninguna de estas claves otorga acceso a sistemas productivos.
+
+title = "G4-Retail-backend Gitleaks Configuration"
+
+[extend]
+# Extiende las reglas por defecto de Gitleaks
+useDefault = true
+
+# ── Allowlist global ────────────────────────────────────────────────────────────
+# Aplica a cualquier regla; las líneas con "gitleaks:allow" ya están exentas
+# por el comportamiento predeterminado de Gitleaks, esto es documentación explícita.
+
+[[allowlists]]
+description = "Fixtures de test: JWTs y clave HMAC en archivos de prueba unitaria"
+paths = [
+    # Archivos de test conocidos que contienen fixtures de autenticación
+    '''src/test/java/pe/edu/unmsm/fisi/retail/config/SeguridadConfigTest\.java''',
+    '''src/test/java/pe/edu/unmsm/fisi/retail/.*Test\.java''',
+]
+# Solo exime las reglas de tipo "generic" y JWT que capturarían estos fixtures.
+# Las reglas de secretos reales (AWS, GCP, tokens de plataforma) siguen activas.
+rules = [
+    "generic-api-key",
+    "generic-secret",
+    "jwt",
+]
+
+[[allowlists]]
+description = "Commits historicos donde JWTs de test existieron antes de migrar a generacion dinamica"
+# Commits donde los JWTs estaban en codigo de test (ya reemplazados en commits posteriores).
+# Verificar con: git show <SHA> -- src/test/java/.../SeguridadConfigTest.java
+commits = [
+    "9fe8a9f2604b4ce7e3f923679e2f92c96c5e9df9",
+    "95ad83b6024298dabccd2d7458cd0704c2057004",
+]

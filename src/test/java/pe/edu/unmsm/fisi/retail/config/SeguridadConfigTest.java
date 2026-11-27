@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SeguridadConfigTest {
 
-    private static final String CLAVE_MOCK = "clave-de-desarrollo-g4-retail-solo-para-la-semana-8";
+    private static final String CLAVE_MOCK = "clave-de-desarrollo-g4-retail-solo-para-la-semana-8"; // gitleaks:allow — fixture de test HMAC, nunca llega a producción
     private static final String USUARIO_ID = "bbbbbbbb-0000-4000-8000-000000000001";
 
     private static RSAKey claveG7;
