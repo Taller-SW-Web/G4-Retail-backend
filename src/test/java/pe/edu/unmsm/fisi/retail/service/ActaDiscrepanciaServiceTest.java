@@ -174,8 +174,8 @@ class ActaDiscrepanciaServiceTest {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
                 INSERT INTO RET_INCIDENCIA_INVENTARIO (id_incidencia, tienda_id, vendedor_reporta_id, variante_sku_id,
-                    codigo_barras, tipo_falla, detalle_observacion, estado_cuarentena)
-                VALUES (?, ?, ?, ?, '7750000000000', ?, ?, ?)
+                    codigo_barras, tipo_falla, detalle_observacion, estado_cuarentena, fecha_reporte, updated_at)
+                VALUES (?, ?, ?, ?, '7750000000000', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """).params(id, tienda, UUID.fromString(VENDEDOR), sku, tipoFalla, "Detalle de " + sku, estado).update();
         return id;
     }
