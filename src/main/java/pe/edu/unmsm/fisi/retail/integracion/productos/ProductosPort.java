@@ -7,6 +7,7 @@ import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -62,4 +63,17 @@ public interface ProductosPort {
      * (X-P0-03), asi que esto devuelve un estado, nunca un numero de unidades.</p>
      */
     List<DisponibilidadComercial> consultarDisponibilidad(List<String> skus);
+
+    /**
+     * Nombre de cada marca por su {@code marca_id} (G6: {@code GET /marcas}). Vacío si la fuente no publica
+     * nombres o no responde: el catálogo muestra entonces el id.
+     */
+    default Map<String, String> nombresDeMarcas() {
+        return Map.of();
+    }
+
+    /** Nombre de cada categoría por su {@code categoria_id} (G6: {@code GET /categorias}). */
+    default Map<String, String> nombresDeCategorias() {
+        return Map.of();
+    }
 }

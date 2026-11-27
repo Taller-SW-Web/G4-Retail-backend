@@ -36,3 +36,5 @@ build/
 .env
 *-secrets.properties
 application-local-secrets.properties
+*.log
+
