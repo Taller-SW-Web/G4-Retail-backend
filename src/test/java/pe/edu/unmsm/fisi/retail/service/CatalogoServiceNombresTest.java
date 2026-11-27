@@ -36,6 +36,8 @@ class CatalogoServiceNombresTest {
     @BeforeEach
     void preparar() {
         productos = mock(ProductosPort.class);
+        // variantesDe es un método por defecto: el doble lo resuelve con listarVariantes, como el puerto.
+        when(productos.variantesDe(any())).thenCallRealMethod();
         when(productos.nombresDeMarcas()).thenReturn(Map.of(MARCA_ID, "adidas"));
         when(productos.nombresDeCategorias()).thenReturn(Map.of(CATEGORIA_ID, "Medias"));
         when(productos.listarProductos(any())).thenReturn(new PaginaProductos(List.of(
