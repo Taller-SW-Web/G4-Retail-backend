@@ -119,7 +119,8 @@ class CuarentenaServiceTest {
         when(productos.listarProductos(any())).thenReturn(new PaginaProductos(List.of(
                 new ProductoComercial("PROD-1", "s", "Camiseta Perú", null, "C", "T", "M", true, null, List.of())),
                 1, 20, 1));
-        when(productos.listarVariantes("PROD-1")).thenReturn(List.of(variante("CAM-PERU-M-BLA"), variante("CAM-PERU-L-BLA")));
+        when(productos.variantesDe(List.of("PROD-1"))).thenReturn(Map.of(
+                "PROD-1", List.of(variante("CAM-PERU-M-BLA"), variante("CAM-PERU-L-BLA"))));
         when(productos.consultarDisponibilidad(any())).thenReturn(List.of());
         when(productos.consultarPrecio(any())).thenReturn(Optional.empty());
         when(incidencias.skusConEstado(eq(TIENDA), anyCollection(), eq(EstadoIncidencia.CUARENTENA_ACTIVA)))
