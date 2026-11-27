@@ -153,8 +153,10 @@ public class ControlService {
         PaginaProductos actual;
         do {
             actual = productos.listarProductos(new FiltroCatalogo(null, null, null, pagina, TAMANIO_PAGINA));
+            Map<String, List<VarianteComercial>> variantes = productos.variantesDe(
+                    actual.items().stream().map(ProductoComercial::productId).toList());
             for (ProductoComercial producto : actual.items()) {
-                for (VarianteComercial variante : productos.listarVariantes(producto.productId())) {
+                for (VarianteComercial variante : variantes.getOrDefault(producto.productId(), List.of())) {
                     filas.put(variante.sku(), new Fila(producto, variante));
                 }
             }
