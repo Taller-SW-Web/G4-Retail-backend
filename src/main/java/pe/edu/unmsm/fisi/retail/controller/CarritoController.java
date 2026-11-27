@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +20,7 @@ import pe.edu.unmsm.fisi.retail.dto.CarritoEsperaDto;
 import pe.edu.unmsm.fisi.retail.service.CarritoService;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Controlador REST para operaciones de carrito de compras en mostrador POS (F4).
@@ -51,9 +54,10 @@ public class CarritoController {
      */
     @PostMapping("/carritos/calcular")
     public ResponseEntity<CalculoCarritoResponse> calcularTotales(
-            @Valid @RequestBody CalculoCarritoRequest request
+            @Valid @RequestBody CalculoCarritoRequest request,
+            @AuthenticationPrincipal Jwt token
     ) {
-        CalculoCarritoResponse respuesta = carritoService.calcularTotales(request);
+        CalculoCarritoResponse respuesta = carritoService.calcularTotales(request, usuarioDe(token));
         return ResponseEntity.ok(respuesta);
     }
 
@@ -77,5 +81,14 @@ public class CarritoController {
     ) {
         List<CarritoEsperaDto> lista = carritoService.listarCarritosEspera(estado);
         return ResponseEntity.ok(lista);
+    }
+
+    /** Vendedor del token, para aplicar la cuarentena de su tienda (F12, RF-33). Nulo si no lo hay. */
+    private static UUID usuarioDe(Jwt token) {
+        try {
+            return token == null || token.getSubject() == null ? null : UUID.fromString(token.getSubject());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }
