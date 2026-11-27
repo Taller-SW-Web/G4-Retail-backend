@@ -51,6 +51,8 @@ class ControlServiceTest {
     void preparar() {
         pickup = mock(PickupService.class);
         productos = mock(ProductosPort.class);
+        // variantesDe es un método por defecto: el doble lo resuelve con listarVariantes, como el puerto.
+        when(productos.variantesDe(any())).thenCallRealMethod();
         campanas = new CampanasMock();
         when(pickup.codigoSucursalDe(VENDEDOR)).thenReturn("TIENDA-MIRAFLORES");
         servicio = new ControlService(pickup, productos, campanas, RELOJ, 900, 120);

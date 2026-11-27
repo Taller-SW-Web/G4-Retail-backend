@@ -64,12 +64,10 @@ public class CatalogoService {
             return CatalogoResponse.vacia(page, size);
         }
 
-        // Las variantes son una llamada aparte por producto; la disponibilidad, una sola para toda
-        // la pagina. Resolverla por SKU multiplicaria los viajes a G6 justo con la cola esperando.
-        Map<String, List<VarianteComercial>> variantesPorProducto = new LinkedHashMap<>();
-        for (ProductoComercial producto : pagina.items()) {
-            variantesPorProducto.put(producto.productId(), productos.listarVariantes(producto.productId()));
-        }
+        // Las variantes son una llamada aparte por producto (en paralelo, ver ProductosHttp); la
+        // disponibilidad, una sola para toda la pagina. Resolverla por SKU multiplicaria los viajes a G6.
+        Map<String, List<VarianteComercial>> variantesPorProducto = productos.variantesDe(
+                pagina.items().stream().map(ProductoComercial::productId).toList());
         Map<String, VarianteResponse.Disponibilidad> estados = consultarEstados(
                 variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
 

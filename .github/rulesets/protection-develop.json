@@ -35,6 +35,9 @@
                                          "required_status_checks":  [
                                                                         {
                                                                             "context":  "Security Analysis / Security Policy Result"
+                                                                        },
+                                                                        {
+                                                                            "context":  "Security Analysis / pr-gate"
                                                                         }
                                                                     ],
                                          "strict_required_status_checks_policy":  true

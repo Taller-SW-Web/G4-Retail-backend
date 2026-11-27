@@ -1,0 +1,5 @@
+# Railway sube la carpeta del repo con "railway up" (scripts/deploy/deploy-railway.sh de devsecops-templates).
+# .scannerwork/report-task.txt enlaza a target/sonar/report-task.txt, que solo existe en el CI de Sonar.
+# Railway no entra a las carpetas ignoradas, así que no sigue el enlace roto.
+.scannerwork/
+target/

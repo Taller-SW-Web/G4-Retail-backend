@@ -1,10 +1,11 @@
+# Wrapper de PR: toda la ejecucion CI/QA/DevSecOps vive en devsecops-templates y la seleccion
+# de controles (por evento, rama y tecnologia) en github-actions/analysis-validator.
 name: Pull Request Security Review
 run-name: CI | ${{ github.event.pull_request.head.ref || github.ref_name }} -> ${{ github.base_ref || github.ref_name }}
 'on':
   pull_request:
-    branches:
-    - develop
-    - main
+    branches: [develop, main]
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
   actions: read
@@ -14,10 +15,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  evidence:
-    name: Evidencias de integración S14
-    uses: ./.github/workflows/workflow-evidence.yml
-  quality:
+  validation:
     name: Security Analysis
     uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-pr-analysis.yml@main
     with:
@@ -25,5 +23,26 @@ jobs:
       technology: maven
       language: java
       sonar_host_url: ${{ vars.SONAR_HOST_URL }}
+      app_jar_pattern: retail-*.jar
+      app_health_path: /api/v1/retail/health
+      app_boot_args: >-
+        --spring.profiles.active=local,mock
+        --retail.seguridad.jwks-uri=http://127.0.0.1:9/jwks
+        --retail.integracion.g7.token-url=http://127.0.0.1:9/token
+        --retail.integracion.ventas.url=http://127.0.0.1:9
+        --retail.integracion.ventas.habilitado=false
+        --retail.integracion.ventas.pickup.modo=memoria
+        --retail.integracion.ventas.pedidos.modo=memoria
+        --spring.jpa.show-sql=false
+        --logging.level.pe.edu.unmsm.fisi.retail=WARN
+      integration_script: scripts/ci/integracion.sh
+      integration_postgres_db: retail_s14
+      integration_report_paths: |
+        target/integration-reports/
+        target/postgres-reports/
+      performance_script: scripts/performance/pos.mjs
+      dast_token_script: scripts/dast/token-prueba.mjs
+      dast_preflight_path: /api/v1/retail/perfil
+      dast_summary_script: scripts/dast/resumir-zap.mjs
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
