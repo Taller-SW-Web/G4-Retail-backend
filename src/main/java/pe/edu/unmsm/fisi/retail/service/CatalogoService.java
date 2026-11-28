@@ -1,6 +1,7 @@
 package pe.edu.unmsm.fisi.retail.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import pe.edu.unmsm.fisi.retail.dto.CatalogoResponse;
 import pe.edu.unmsm.fisi.retail.dto.CodigoBarrasResponse;
@@ -20,6 +21,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -41,6 +44,20 @@ public class CatalogoService {
 
     private final ProductosPort productos;
 
+    /** Cuarentena local de F12 (RF-33). Nula en las pruebas que solo prueban la fachada de G6. */
+    private CuarentenaService cuarentena;
+
+    @Autowired(required = false)
+    void setCuarentena(CuarentenaService cuarentena) {
+        this.cuarentena = cuarentena;
+    }
+
+    /** Busqueda sin tienda: ninguna variante se marca en cuarentena. */
+    public CatalogoResponse buscar(String q, String categoria, String disciplina, String marca,
+                                   int page, int size) {
+        return buscar(q, categoria, disciplina, marca, page, size, null);
+    }
+
     /**
      * Busqueda multicriterio del catalogo (RF-04).
      *
@@ -50,10 +67,14 @@ public class CatalogoService {
      * filtro en lugar de descartarla en memoria, que ademas descuadraria el total de la pagina. Si
      * llegan las dos, manda {@code categoria}, que es la mas especifica.</p>
      *
-     * @param page numero de pagina empezando en 0, como expone Retail (seccion 2.7)
+     * <p>Cada variante lleva {@code enCuarentena = true} si la tienda del vendedor tiene una incidencia
+     * activa sobre su SKU (F12, RF-33).</p>
+     *
+     * @param page      numero de pagina empezando en 0, como expone Retail (seccion 2.7)
+     * @param usuarioId vendedor que consulta; define la tienda de la cuarentena. Puede ser nulo
      */
     public CatalogoResponse buscar(String q, String categoria, String disciplina, String marca,
-                                   int page, int size) {
+                                   int page, int size, UUID usuarioId) {
         String categoriaEfectiva = primeroNoVacio(categoria, disciplina);
         Map<String, String> marcas = productos.nombresDeMarcas();
         Map<String, String> categorias = productos.nombresDeCategorias();
@@ -69,16 +90,17 @@ public class CatalogoService {
         // disponibilidad, una sola para toda la pagina. Resolverla por SKU multiplicaria los viajes a G6.
         Map<String, List<VarianteComercial>> variantesPorProducto = productos.variantesDe(
                 pagina.items().stream().map(ProductoComercial::productId).toList());
-        Map<String, VarianteResponse.Disponibilidad> estados = consultarEstados(
-                variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
+        List<String> skus = variantesPorProducto.values().stream().flatMap(List::stream)
+                .map(VarianteComercial::sku).toList();
+        Map<String, VarianteResponse.Disponibilidad> estados = consultarEstados(skus);
+        Set<String> bloqueados = enCuarentena(usuarioId, skus);
 
         // Los precios tambien van en lote: uno por SKU eran cientos de llamadas y el APIM de G6 las corta con 429.
-        Map<String, Precio> precios = productos.preciosDe(
-                variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
+        Map<String, Precio> precios = productos.preciosDe(skus);
 
         List<ProductoCatalogoResponse> items = pagina.items().stream()
                 .map(producto -> armarProducto(producto, variantesPorProducto.get(producto.productId()), estados,
-                        precios, marcas, categorias))
+                        precios, bloqueados, marcas, categorias))
                 .toList();
 
         return new CatalogoResponse(items, page, size, pagina.total());
@@ -96,6 +118,14 @@ public class CatalogoService {
      * define otro error para esta ruta.</p>
      */
     public CodigoBarrasResponse resolverCodigoBarras(String codigo) {
+        return resolverCodigoBarras(codigo, null);
+    }
+
+    /**
+     * Igual que {@link #resolverCodigoBarras(String)}, marcando {@code enCuarentena} segun la tienda del
+     * vendedor: con {@code true}, la SPA bloquea la adicion al carrito (RF-33).
+     */
+    public CodigoBarrasResponse resolverCodigoBarras(String codigo, UUID usuarioId) {
         String leido = codigo == null ? "" : codigo.trim();
         String sku = CODIGO_BARRAS.matcher(leido).matches()
                 ? productos.resolverCodigoBarras(leido).orElseThrow(() -> noEncontrado(leido))
@@ -111,9 +141,28 @@ public class CatalogoService {
                 .orElseThrow(() -> noEncontrado(leido));
 
         VarianteResponse respuesta = armarVariante(variante, consultarEstados(List.of(sku)),
-                productos.preciosDe(List.of(sku)));
+                productos.preciosDe(List.of(sku)), enCuarentena(usuarioId, List.of(sku)));
         return new CodigoBarrasResponse(leido, producto.productId(), producto.name(),
                 respuesta.precio(), respuesta);
+    }
+
+    /**
+     * Nombre legible de la prenda de un SKU, con su talla y color si los tiene, por ejemplo
+     * {@code Camiseta Peru (M / Blanco)}. Lo usa F12 para la bandeja de cuarentena (RF-33).
+     *
+     * @return vacio si el SKU no figura en el catalogo
+     */
+    public Optional<String> nombreDelSku(String sku) {
+        return buscarProductoDelSku(sku).map(producto -> {
+            String detalle = productos.listarVariantes(producto.productId()).stream()
+                    .filter(variante -> sku.equals(variante.sku()))
+                    .findFirst()
+                    .map(variante -> java.util.stream.Stream.of(variante.atributo("Talla"), variante.atributo("Color"))
+                            .flatMap(Optional::stream)
+                            .collect(java.util.stream.Collectors.joining(" / ")))
+                    .orElse("");
+            return detalle.isEmpty() ? producto.name() : producto.name() + " (" + detalle + ")";
+        });
     }
 
     /**
@@ -135,10 +184,11 @@ public class CatalogoService {
                                                    List<VarianteComercial> variantes,
                                                    Map<String, VarianteResponse.Disponibilidad> estados,
                                                    Map<String, Precio> precios,
+                                                   Set<String> enCuarentena,
                                                    Map<String, String> marcas, Map<String, String> categorias) {
         String categoria = nombreDe(producto.categoriaId(), categorias);
         List<VarianteResponse> armadas = variantes.stream()
-                .map(variante -> armarVariante(variante, estados, precios))
+                .map(variante -> armarVariante(variante, estados, precios, enCuarentena))
                 .toList();
         return new ProductoCatalogoResponse(
                 producto.productId(),
@@ -158,13 +208,13 @@ public class CatalogoService {
      * canales (X-P0-03), y el contrato ya advierte que la SPA no debe depender de ese numero. El
      * semaforo se decide con el estado, no con unidades inventadas.</p>
      *
-     * <p>{@code enCuarentena} es {@code false} mientras G6 no publique ese dato. La cuarentena
-     * (RF-33) la introduce F9 con las devoluciones; marcarla aqui por adelantado seria afirmar algo
-     * que ningun sistema esta informando todavia.</p>
+     * <p>{@code enCuarentena} sale de la cuarentena local de F12 (RF-33): el SKU tiene una incidencia
+     * activa ({@code PENDIENTE_REPORTE} o {@code EN_CUARENTENA}) en la tienda del vendedor.</p>
      */
     private VarianteResponse armarVariante(VarianteComercial variante,
                                            Map<String, VarianteResponse.Disponibilidad> estados,
-                                           Map<String, Precio> precios) {
+                                           Map<String, Precio> precios,
+                                           Set<String> enCuarentena) {
         Precio vigente = precios.get(variante.sku());
         BigDecimal precio = vigente == null ? null : vigente.precioEfectivo();
         return new VarianteResponse(
@@ -174,7 +224,12 @@ public class CatalogoService {
                 precio,
                 estados.getOrDefault(variante.sku(), VarianteResponse.Disponibilidad.DISPONIBLE),
                 null,
-                false);
+                enCuarentena.contains(variante.sku()));
+    }
+
+    /** SKU en cuarentena activa en la tienda del vendedor; vacio sin vendedor o sin F12 disponible. */
+    private Set<String> enCuarentena(UUID usuarioId, List<String> skus) {
+        return cuarentena == null ? Set.of() : cuarentena.skusBloqueados(usuarioId, skus);
     }
 
     /** Pide la disponibilidad de todos los SKUs de una vez y la deja traducida por SKU. */
