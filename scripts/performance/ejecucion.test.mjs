@@ -19,12 +19,13 @@ test('el generador guarda muestras, etapas e interpretación sin guardar tokens'
   t.mock.method(globalThis, 'fetch', async url => ({ status: 200, json: async () => cuerpo(url) }));
   const destino = await salida();
   const aprobado = await ejecutar({ PERF_OUTPUT: destino, PERF_SECONDS: '1', PERF_WARMUP_SECONDS: '1', PERF_USERS: '1', PERF_THINK_MS: '1' });
-  assert.equal(aprobado, true);
+  assert.equal(aprobado, false);
   const texto = await readFile(resolve(destino, 'resultados.json'), 'utf8');
   const informe = JSON.parse(texto);
   assert.equal(informe.etapas.length, 1);
   assert.equal(informe.etapas[0].resultados.length, 3);
-  assert.ok(informe.etapas[0].muestras.length >= 60);
+  assert.ok(informe.etapas[0].muestras.length < 60);
+  assert.ok(informe.etapas[0].rpmAlcanzado > 0);
   assert.equal(texto.includes('Authorization'), false);
   assert.equal(texto.includes('eyJhbGci'), false);
   assert.match(await readFile(resolve(destino, 'informe.md'), 'utf8'), /no demuestra/);

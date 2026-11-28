@@ -34,7 +34,7 @@ export function configuracion(env) {
   }
   return {
     modo, origen: url.origin, concurrencias,
-    duracion: entero('PERF_SECONDS', 20, 1, 300),
+    duracion: entero('PERF_SECONDS', 60, 1, 300),
     calentamiento: entero('PERF_WARMUP_SECONDS', 5, 1, 60),
     pausaMs: entero('PERF_THINK_MS', 50, 0, 5000),
     // Budget shared by every virtual user and endpoint. External mode is conservative
@@ -61,6 +61,7 @@ function tokenLocal() {
 
 export async function ejecutar(env = process.env) {
   const c = configuracion(env);
+  if (c.modo !== 'local') throw new Error('Carga permitida únicamente en loopback efímero; producción prohibida');
   const token = c.modo === 'local' ? tokenLocal() : env.PERF_TOKEN;
   const escenarios = [
     { nombre: 'catalogo', ruta: '/api/v1/retail/catalogo?page=0&size=20', limite: 800,
@@ -115,10 +116,10 @@ export async function ejecutar(env = process.env) {
   async function etapa(usuarios, segundos, guardar) {
     const inicio = performance.now(), fin = inicio + segundos * 1000;
     const muestras = [];
+    let siguienteEscenario = 0;
     await Promise.all(Array.from({ length: usuarios }, async (_, usuario) => {
-      let indice = usuario;
       while (performance.now() < fin) {
-        const muestra = await peticion(escenarios[indice++ % escenarios.length]);
+        const muestra = await peticion(escenarios[siguienteEscenario++ % escenarios.length]);
         if (guardar) muestras.push(muestra);
         if (c.pausaMs) await esperar(c.pausaMs);
       }
@@ -133,7 +134,7 @@ export async function ejecutar(env = process.env) {
     const { muestras, segundos } = await etapa(usuarios, c.duracion, true);
     const resultados = escenarios.map(e => ({ escenario: e.nombre,
       ...resumir(muestras.filter(m => m.escenario === e.nombre), segundos, e.limite) }));
-    etapas.push({ usuarios, segundos, resultados, muestras });
+    etapas.push({ usuarios, segundos, resultados, muestras, rpmConfigurado: c.maxRpm, rpmEfectivoMaximo: Math.min(c.maxRpm, c.vendedorMaxRpm), rpmAlcanzado: muestras.length * 60 / segundos, rps: muestras.length / segundos });
     console.log(`Etapa ${usuarios} usuarios: ${resultados.every(r => r.aprobado) ? 'APROBADA' : 'NO APROBADA'}`);
   }
   let sha = env.GITHUB_SHA || 'sin-git', cambiosLocales = 'desconocido';
@@ -142,18 +143,19 @@ export async function ejecutar(env = process.env) {
     cambiosLocales = Boolean(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
   } catch { /* El informe conserva la ausencia de procedencia Git. */ }
   const informe = {
-    fecha: new Date().toISOString(), sha, cambiosLocales,
+    fecha: new Date().toISOString(), sha, cambiosLocales, tipo: 'smoke con tasa limitada; no demuestra capacidad concurrente',
     run: env.GITHUB_RUN_ID || null, configuracion: c,
     equipo: { plataforma: platform(), version: release(), node: process.version, cpu: cpus()[0]?.model, nucleos: cpus().length, memoriaBytes: totalmem() },
     aprobado: etapas.every(e => e.resultados.every(r => r.aprobado)), etapas,
   };
   const f = n => n == null ? 'N/D' : n.toFixed(2);
   const filas = etapas.flatMap(e => e.resultados.map(r =>
-    `| ${e.usuarios} | ${r.escenario} | ${r.peticiones} | ${r.errores} | ${f(r.p50)} | ${f(r.p95)} | ${f(r.p99)} | ${f(r.rps)} | ${r.fueraDeLimite} | ${r.aprobado ? 'PASA' : 'FALLA'} |`));
+    `| ${e.usuarios} | ${r.escenario} | ${r.peticiones} | ${r.errores} | ${f(r.tasaError * 100)} | ${f(r.p50)} | ${f(r.p95)} | ${f(r.p99)} | ${f(r.rps)} | ${r.fueraDeLimite} | ${r.aprobado ? 'PASA' : 'FALLA'} |`));
   const markdown = `# Performance POS — S14\n\nFecha UTC: ${informe.fecha}\n\nSHA: ${sha}; cambios locales: ${cambiosLocales}.\n\nEntorno declarado: ${c.entorno}\n\nResultado: ${informe.aprobado ? 'PASA' : 'FALLA'}.\n\nLímite global del generador: ${Math.min(c.maxRpm, c.vendedorMaxRpm)} RPM; intervalo mínimo ${intervaloMinimoMs} ms entre peticiones. Rate limit del backend permanece activo. G5 permite 300 RPM compartidas: la prueba externa usa como máximo 240 RPM por defecto y debe coordinarse con otras cajas.\n\n`
-    + '| Usuarios | Endpoint | Peticiones | Errores | p50 ms | p95 ms | p99 ms | RPS | >= límite ms | Gate |\n'
-    + '|---|---|---|---|---|---|---|---|---|---|\n' + filas.join('\n')
-    + '\n\nCarga cerrada: cada usuario espera respuesta y pausa. RPS medido, no tasa de llegada constante. '
+    + etapas.map(e => `Usuarios: ${e.usuarios}; RPM configurado: ${e.rpmConfigurado}; l?mite efectivo: ${e.rpmEfectivoMaximo}; RPM alcanzado: ${f(e.rpmAlcanzado)}.\n\n`).join('')
+    + '| Usuarios | Endpoint | Peticiones | Errores | Errores % | p50 ms | p95 ms | p99 ms | RPS | >= límite ms | Gate |\n'
+    + '|---|---|---|---|---|---|---|---|---|---|---|\n' + filas.join('\n')
+    + '\n\nSmoke con tasa limitada, no prueba de capacidad concurrente. Carga cerrada: cada usuario espera respuesta y pausa. RPS medido, no tasa de llegada constante. '
     + 'Calentamiento excluido; latencia incluye lectura y validación de JSON. Cada endpoint exige al menos 20 muestras, '
     + 'errores < 1% y p95 < 800 ms (catálogo/escaneo) o < 500 ms (carrito, objetivo operativo propuesto). '
     + 'La spec RF-04 exige < 800 ms: la columna de excedencias muestra incumplimientos que el p95 podría ocultar. '
