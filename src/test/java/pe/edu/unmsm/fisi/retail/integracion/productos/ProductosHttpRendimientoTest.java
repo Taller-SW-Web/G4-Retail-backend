@@ -42,6 +42,7 @@ class ProductosHttpRendimientoTest {
 
     private HttpServer servidor;
     private final AtomicInteger llamadas = new AtomicInteger();
+    private final AtomicInteger llamadasPrecios = new AtomicInteger();
     private final AtomicInteger simultaneas = new AtomicInteger();
     private final AtomicInteger maximoSimultaneas = new AtomicInteger();
     private volatile int estadoDetalle = 200;
@@ -73,6 +74,20 @@ class ProductosHttpRendimientoTest {
             String skus = intercambio.getRequestURI().getQuery().replaceAll(".*skus=([^&]*).*", "$1");
             String items = String.join(",", java.util.Arrays.stream(skus.split(","))
                     .map(sku -> "{\"sku\":\"" + sku + "\",\"status\":\"DISPONIBLE\"}").toList());
+            byte[] cuerpo = ("{\"items\":[" + items + "]}").getBytes(StandardCharsets.UTF_8);
+            intercambio.getResponseHeaders().add("Content-Type", "application/json");
+            intercambio.sendResponseHeaders(200, cuerpo.length);
+            intercambio.getResponseBody().write(cuerpo);
+            intercambio.close();
+        });
+        servidor.createContext("/api/v1/precios", intercambio -> {
+            llamadas.incrementAndGet();
+            llamadasPrecios.incrementAndGet();
+            String skus = intercambio.getRequestURI().getQuery().replaceAll(".*skus=([^&]*).*", "$1");
+            // SKU-SIN-PRECIO no tiene precio vigente en G6: no aparece en la respuesta.
+            String items = String.join(",", java.util.Arrays.stream(skus.split(","))
+                    .filter(sku -> !sku.equals("SKU-SIN-PRECIO"))
+                    .map(sku -> "{\"sku\":\"" + sku + "\",\"precio_regular\":59.9,\"precio_oferta\":null}").toList());
             byte[] cuerpo = ("{\"items\":[" + items + "]}").getBytes(StandardCharsets.UTF_8);
             intercambio.getResponseHeaders().add("Content-Type", "application/json");
             intercambio.sendResponseHeaders(200, cuerpo.length);
@@ -184,6 +199,35 @@ class ProductosHttpRendimientoTest {
         assertThat(estados).hasSize(250);
         assertThat(estados).extracting(DisponibilidadComercial::sku).containsExactlyElementsOf(skus);
         assertThat(llamadas.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Pide los precios en lote: 250 SKU son 3 llamadas a GET /precios, no 250")
+    void preciosEnLote() {
+        ProductosHttp productos = adaptador(Clock.systemUTC(), 4);
+        List<String> skus = IntStream.rangeClosed(1, 250).mapToObj(i -> "SKU-" + i).toList();
+
+        Map<String, pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio> precios = productos.preciosDe(skus);
+
+        assertThat(llamadasPrecios.get()).isEqualTo(3);
+        assertThat(precios).hasSize(250);
+        assertThat(precios.get("SKU-7").precioEfectivo()).isEqualByComparingTo("59.9");
+    }
+
+    @Test
+    @DisplayName("El SKU sin precio no aparece, y la segunda vez los precios salen de caché (también para consultarPrecio)")
+    void preciosEnCache() {
+        ProductosHttp productos = adaptador(Clock.systemUTC(), 4);
+
+        Map<String, pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio> precios =
+                productos.preciosDe(List.of("SKU-1", "SKU-SIN-PRECIO"));
+        assertThat(precios).containsOnlyKeys("SKU-1");
+
+        productos.preciosDe(List.of("SKU-1", "SKU-SIN-PRECIO"));
+        assertThat(productos.consultarPrecio("SKU-1")).isPresent();
+        assertThat(productos.consultarPrecio("SKU-SIN-PRECIO")).isEmpty();
+        assertThat(llamadasPrecios.get()).isEqualTo(1);
+        assertThat(llamadas.get()).isEqualTo(1);
     }
 
     /** Reloj que el test adelanta a mano para vencer la caché sin esperar. */

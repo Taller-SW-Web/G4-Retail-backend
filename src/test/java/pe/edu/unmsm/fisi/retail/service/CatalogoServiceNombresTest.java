@@ -9,14 +9,18 @@ import pe.edu.unmsm.fisi.retail.dto.ProductoCatalogoResponse;
 import pe.edu.unmsm.fisi.retail.integracion.productos.ProductosPort;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.FiltroCatalogo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.PaginaProductos;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.ProductoComercial;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,6 +62,23 @@ class CatalogoServiceNombresTest {
         assertThat(conNombre.categoria()).isEqualTo("Medias");
         assertThat(conNombre.disciplina()).isEqualTo("Medias");
         assertThat(respuesta.items().get(1).marca()).isEqualTo("MARCA-X");
+    }
+
+    @Test
+    @DisplayName("Toma los precios de la página en un solo lote, sin consultar precio por SKU")
+    void preciosEnUnLote() {
+        when(productos.listarVariantes("PROD-1")).thenReturn(List.of(
+                new VarianteComercial("V1", "SKU-1", List.of(), List.of(), List.of()),
+                new VarianteComercial("V2", "SKU-2", List.of(), List.of(), List.of())));
+        when(productos.preciosDe(any())).thenReturn(Map.of(
+                "SKU-1", new Precio("SKU-1", new BigDecimal("80"), new BigDecimal("59"), "PEN")));
+
+        CatalogoResponse respuesta = servicio.buscar(null, null, null, null, 0, 20);
+
+        verify(productos).preciosDe(List.of("SKU-1", "SKU-2"));
+        verify(productos, never()).consultarPrecio(any());
+        assertThat(respuesta.items().get(0).variantes().get(0).precio()).isEqualByComparingTo("59");
+        assertThat(respuesta.items().get(0).variantes().get(1).precio()).isNull();
     }
 
     @Test
