@@ -35,4 +35,7 @@ test('valida duración, concurrencia y URLs sin credenciales', () => {
   assert.throws(() => configuracion({ PERF_USERS: '0,1000' }), /usuarios/);
   assert.throws(() => configuracion({ PERF_BASE_URL: 'http://user:password@localhost' }), /credenciales/);
   assert.deepEqual(configuracion({}).concurrencias, [1, 5, 10]);
+  const defaults = configuracion({});
+  assert.equal(defaults.duracion, 60);
+  assert.ok(defaults.duracion * Math.min(defaults.maxRpm, defaults.vendedorMaxRpm) / 60 / 3 >= 20);
 });

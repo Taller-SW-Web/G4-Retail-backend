@@ -19,6 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- pgJDBC: corrige CVE-2026-54291 y avisos posteriores; misma línea 42.7. -->
+        <postgresql.version>42.7.14</postgresql.version>
         <retail.test.reports>${project.build.directory}/surefire-reports</retail.test.reports>
     </properties>
 
