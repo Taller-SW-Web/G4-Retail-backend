@@ -57,6 +57,20 @@ public interface ProductosPort {
     Optional<Precio> consultarPrecio(String sku);
 
     /**
+     * Precios vigentes de varios SKU, por SKU; el que no tiene precio no aparece. El adaptador real
+     * los pide en lote ({@code GET /precios?skus=}, hasta 100 por llamada); esta versión, uno por uno.
+     */
+    default Map<String, Precio> preciosDe(List<String> skus) {
+        Map<String, Precio> resultado = new java.util.LinkedHashMap<>();
+        for (String sku : skus) {
+            if (!resultado.containsKey(sku)) {
+                consultarPrecio(sku).ifPresent(precio -> resultado.put(sku, precio));
+            }
+        }
+        return resultado;
+    }
+
+    /**
      * Disponibilidad comercial, sin cantidades.
      *
      * <p>G6: {@code GET /inventario/disponibilidad}. Productos no expone saldos a los canales

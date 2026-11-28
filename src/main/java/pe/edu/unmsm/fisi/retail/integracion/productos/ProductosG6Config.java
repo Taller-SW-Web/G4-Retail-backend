@@ -54,8 +54,8 @@ public class ProductosG6Config {
     @Bean
     public ProductosPort productosPort(
             @Value("${retail.integracion.productos.cache-segundos:60}") long cacheSegundos,
-            @Value("${retail.integracion.productos.cache-variantes-segundos:900}") long cacheVariantesSegundos,
-            @Value("${retail.integracion.productos.paralelismo:8}") int paralelismo) {
+            @Value("${retail.integracion.productos.cache-variantes-segundos:21600}") long cacheVariantesSegundos,
+            @Value("${retail.integracion.productos.paralelismo:4}") int paralelismo) {
         return new ProductosHttp(cliente(), token, Clock.systemUTC(), Duration.ofSeconds(cacheSegundos),
                 Duration.ofSeconds(cacheVariantesSegundos), paralelismo);
     }
