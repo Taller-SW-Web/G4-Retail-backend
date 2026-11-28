@@ -13,6 +13,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -50,14 +51,17 @@ public class SeguridadConfig {
             "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**"};
 
     private final String claveMock;
+    private final boolean tokensDePruebaHabilitados;
     private final String jwksUri;
     private final ObjectMapper mapper;
 
     public SeguridadConfig(
             @Value("${retail.seguridad.mock.clave}") String claveMock,
+            @Value("${retail.seguridad.mock.habilitado:false}") boolean tokensDePruebaHabilitados,
             @Value("${retail.seguridad.jwks-uri:https://g7-auth-service.onrender.com/api/v1/auth/.well-known/jwks.json}") String jwksUri,
             ObjectMapper mapper) {
         this.claveMock = claveMock;
+        this.tokensDePruebaHabilitados = tokensDePruebaHabilitados;
         this.jwksUri = jwksUri;
         this.mapper = mapper;
     }
@@ -86,9 +90,10 @@ public class SeguridadConfig {
     /**
      * Decodificador del token.
      *
-     * <p>Soporta tanto tokens simulados HMAC (firmados con la clave de prueba para tests locales)
-     * como tokens reales RS256 emitidos por Seguridad (G7), validados contra su endpoint JWKS oficial
-     * (seccion 2.4 del contrato v0.4).</p>
+     * <p>Valida los tokens reales RS256 de Seguridad (G7) contra su JWKS oficial (seccion 2.4 del
+     * contrato). Los tokens HMAC firmados con la clave de desarrollo solo se aceptan con
+     * {@code retail.seguridad.mock.habilitado=true} (perfil {@code local}: pruebas, CI, DAST y
+     * performance en loopback). Esa clave esta en el repositorio, asi que en la nube se rechazan.</p>
      */
     @Bean
     public JwtDecoder decodificadorDeToken() {
@@ -103,6 +108,9 @@ public class SeguridadConfig {
                 }
             } catch (Exception ignored) {
                 // Si el formato del header no es inspeccionable, delegar en hs256 para el manejo estandar de errores
+            }
+            if (!tokensDePruebaHabilitados) {
+                throw new BadJwtException("Solo se aceptan tokens RS256 emitidos por Seguridad (G7)");
             }
             return hs256Decoder.decode(token);
         };
