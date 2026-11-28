@@ -11,6 +11,7 @@ import pe.edu.unmsm.fisi.retail.integracion.productos.ProductosPort;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.DisponibilidadComercial;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.FiltroCatalogo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.PaginaProductos;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.ProductoComercial;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 
@@ -71,9 +72,13 @@ public class CatalogoService {
         Map<String, VarianteResponse.Disponibilidad> estados = consultarEstados(
                 variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
 
+        // Los precios tambien van en lote: uno por SKU eran cientos de llamadas y el APIM de G6 las corta con 429.
+        Map<String, Precio> precios = productos.preciosDe(
+                variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
+
         List<ProductoCatalogoResponse> items = pagina.items().stream()
                 .map(producto -> armarProducto(producto, variantesPorProducto.get(producto.productId()), estados,
-                        marcas, categorias))
+                        precios, marcas, categorias))
                 .toList();
 
         return new CatalogoResponse(items, page, size, pagina.total());
@@ -105,7 +110,8 @@ public class CatalogoService {
                 .findFirst()
                 .orElseThrow(() -> noEncontrado(leido));
 
-        VarianteResponse respuesta = armarVariante(variante, consultarEstados(List.of(sku)));
+        VarianteResponse respuesta = armarVariante(variante, consultarEstados(List.of(sku)),
+                productos.preciosDe(List.of(sku)));
         return new CodigoBarrasResponse(leido, producto.productId(), producto.name(),
                 respuesta.precio(), respuesta);
     }
@@ -128,10 +134,11 @@ public class CatalogoService {
     private ProductoCatalogoResponse armarProducto(ProductoComercial producto,
                                                    List<VarianteComercial> variantes,
                                                    Map<String, VarianteResponse.Disponibilidad> estados,
+                                                   Map<String, Precio> precios,
                                                    Map<String, String> marcas, Map<String, String> categorias) {
         String categoria = nombreDe(producto.categoriaId(), categorias);
         List<VarianteResponse> armadas = variantes.stream()
-                .map(variante -> armarVariante(variante, estados))
+                .map(variante -> armarVariante(variante, estados, precios))
                 .toList();
         return new ProductoCatalogoResponse(
                 producto.productId(),
@@ -156,10 +163,10 @@ public class CatalogoService {
      * que ningun sistema esta informando todavia.</p>
      */
     private VarianteResponse armarVariante(VarianteComercial variante,
-                                           Map<String, VarianteResponse.Disponibilidad> estados) {
-        BigDecimal precio = productos.consultarPrecio(variante.sku())
-                .map(p -> p.precioEfectivo())
-                .orElse(null);
+                                           Map<String, VarianteResponse.Disponibilidad> estados,
+                                           Map<String, Precio> precios) {
+        Precio vigente = precios.get(variante.sku());
+        BigDecimal precio = vigente == null ? null : vigente.precioEfectivo();
         return new VarianteResponse(
                 variante.sku(),
                 variante.atributo("Talla").orElse(null),
