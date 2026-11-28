@@ -61,6 +61,15 @@ public class RegistroVentaRepository {
 
     public void guardar(String clave, UUID turno, String tienda, VentaResponse venta,
                         List<VentaRequest.ItemVentaDto> lineas, String respuesta) {
+        insertarVenta(turno, tienda, venta, lineas);
+        jdbc.sql("UPDATE ret_venta_operacion SET respuesta = ? WHERE clave = ?").params(respuesta, clave).update();
+    }
+
+    /**
+     * Guarda la boleta y sus lineas en RET_VENTA. Lo usa la venta de F5 y la boleta del cambio de mayor
+     * valor de F9, que no pasa por ret_venta_operacion.
+     */
+    public void insertarVenta(UUID turno, String tienda, VentaResponse venta, List<VentaRequest.ItemVentaDto> lineas) {
         var comprobante = venta.comprobante();
         UUID ventaId = UUID.fromString(venta.ventaId());
         jdbc.sql("""
@@ -76,7 +85,6 @@ public class RegistroVentaRepository {
                     VALUES (?, ?, ?, ?, ?)
                     """).params(ventaId, indice + 1, linea.sku(), linea.cantidad(), linea.precioFinal()).update();
         }
-        jdbc.sql("UPDATE ret_venta_operacion SET respuesta = ? WHERE clave = ?").params(respuesta, clave).update();
     }
 
     public Optional<Venta> buscarBoleta(String tienda, int correlativo, boolean bloquear) {

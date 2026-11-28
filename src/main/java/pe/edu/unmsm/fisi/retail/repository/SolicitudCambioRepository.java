@@ -4,8 +4,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pe.edu.unmsm.fisi.retail.model.EstadoAprobacionCambio;
+import pe.edu.unmsm.fisi.retail.model.EstadoInventarioCambio;
 import pe.edu.unmsm.fisi.retail.model.SolicitudCambio;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,6 +15,9 @@ import java.util.UUID;
 public interface SolicitudCambioRepository extends JpaRepository<SolicitudCambio, UUID> {
 
     Optional<SolicitudCambio> findByIdempotencyKey(String idempotencyKey);
+
+    /** Cambios cuyo pedido Ventas aun no acepto, para que el job los reintente. */
+    List<SolicitudCambio> findTop50ByEstadoInventarioOrderByFechaInspeccionAsc(EstadoInventarioCambio estado);
 
     /** Unidades de un SKU que ya se cambiaron con esta boleta: no se puede cambiar dos veces la misma prenda. */
     @Query("""

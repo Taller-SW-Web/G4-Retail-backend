@@ -147,6 +147,14 @@ public class CatalogoService {
     }
 
     /**
+     * Producto al que pertenece un SKU. F9 lo usa para saber si un cambio es del mismo modelo (mismo
+     * producto, otra talla o color).
+     */
+    public Optional<String> productoDelSku(String sku) {
+        return buscarProductoDelSku(sku).map(ProductoComercial::productId);
+    }
+
+    /**
      * Nombre legible de la prenda de un SKU, con su talla y color si los tiene, por ejemplo
      * {@code Camiseta Peru (M / Blanco)}. Lo usa F12 para la bandeja de cuarentena (RF-33).
      *

@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import pe.edu.unmsm.fisi.retail.dto.BoletaNumero;
-import pe.edu.unmsm.fisi.retail.dto.RegistroCambioRequest;
-import pe.edu.unmsm.fisi.retail.dto.ValeCompraResponse;
+import pe.edu.unmsm.fisi.retail.dto.CambioDirectoRequest;
+import pe.edu.unmsm.fisi.retail.dto.CambioDirectoResponse;
 import pe.edu.unmsm.fisi.retail.dto.ValidarCambioResponse;
 import pe.edu.unmsm.fisi.retail.exception.AccesoDenegadoException;
 import pe.edu.unmsm.fisi.retail.service.CambioService;
@@ -60,24 +60,24 @@ public class CambioController {
     }
 
     /**
-     * Registra el cambio y emite el vale.
+     * Registra un cambio directo de prenda (contrato 5.9): el cliente devuelve una prenda y se lleva otra.
      *
-     * <p>El {@code Idempotency-Key} es obligatorio: si el vendedor pulsa dos veces o la red reintenta,
-     * se devuelve el mismo vale en lugar de emitir otro por la misma prenda.</p>
+     * <p>Mismo valor: sin cobro ni boleta. Mayor valor: se cobra la diferencia y se emite la boleta de las
+     * prendas nuevas. Menor valor: {@code 422 CAMBIO_MENOR_VALOR}. En los dos casos se crea el pedido en
+     * Ventas con la misma {@code Idempotency-Key}.</p>
      *
-     * <p>Errores: {@code 400} por datos o cabecera faltantes; {@code 404 COMPROBANTE_NO_ENCONTRADO};
-     * {@code 409 IDEMPOTENCY_CONFLICT}; {@code 422} por {@code CAJA_NO_ABIERTA}, {@code PLAZO_VENCIDO},
-     * {@code PRENDA_NO_INCLUIDA}, {@code CANTIDAD_NO_DISPONIBLE} o {@code INSPECCION_NO_APTA}.</p>
+     * <p>El {@code Idempotency-Key} es obligatorio: si el vendedor pulsa dos veces o la red reintenta, se
+     * devuelve el mismo cambio y no se consumen mas unidades.</p>
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ValeCompraResponse registrar(
+    public CambioDirectoResponse registrar(
             @AuthenticationPrincipal Jwt token,
             @RequestHeader("Idempotency-Key")
             @NotBlank(message = "La cabecera Idempotency-Key no puede estar vacia")
             @Size(max = 64, message = "La cabecera Idempotency-Key admite hasta 64 caracteres")
             String idempotencyKey,
-            @Valid @RequestBody RegistroCambioRequest peticion) {
+            @Valid @RequestBody CambioDirectoRequest peticion) {
         return cambioService.registrar(usuarioDelToken(token), idempotencyKey, peticion);
     }
 

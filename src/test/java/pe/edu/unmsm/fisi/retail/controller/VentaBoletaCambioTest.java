@@ -79,11 +79,14 @@ class VentaBoletaCambioTest {
         mvc.perform(post("/api/v1/retail/cambios").with(jwt().jwt(t -> t.subject(VENDEDOR)))
                         .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"boletaNumero":"%s","sku":"POLTEC-M-BLA","cantidad":1,"motivo":"CAMBIO_TALLA",
-                                "inspeccion":{"etiquetasIntactas":true,"sinSignosUso":true,"empaqueOriginal":true}}
-                                """.formatted(boleta)))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.vale.boletaOrigen").value(boleta))
-                .andExpect(jsonPath("$.vale.monto").value(59.90));
+                                {"boletaNumero":"%s","terminalPos":"%s","turnoId":"%s","motivo":"CAMBIO_TALLA",
+                                "devuelto":{"sku":"POLTEC-M-BLA","cantidad":1,
+                                "inspeccion":{"etiquetasIntactas":true,"sinSignosUso":true,"empaqueOriginal":true}},
+                                "nuevos":[{"sku":"POLTEC-L-AZU","cantidad":1}]}
+                                """.formatted(boleta, caja.path("terminalPos").asText(), caja.path("turnoId").asText())))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.boletaOrigen").value(boleta))
+                .andExpect(jsonPath("$.tipoCambio").value("MISMO_VALOR"))
+                .andExpect(jsonPath("$.montoCredito").value(59.90));
 
         var peticiones = ArgumentCaptor.forClass(VentasCrearPedidoRequest.class);
         verify(ventas, times(2)).crearPedido(peticiones.capture(), eq(clave));
