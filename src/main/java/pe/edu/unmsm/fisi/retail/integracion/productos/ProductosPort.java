@@ -7,6 +7,7 @@ import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -56,10 +57,49 @@ public interface ProductosPort {
     Optional<Precio> consultarPrecio(String sku);
 
     /**
+     * Precios vigentes de varios SKU, por SKU; el que no tiene precio no aparece. El adaptador real
+     * los pide en lote ({@code GET /precios?skus=}, hasta 100 por llamada); esta versión, uno por uno.
+     */
+    default Map<String, Precio> preciosDe(List<String> skus) {
+        Map<String, Precio> resultado = new java.util.LinkedHashMap<>();
+        for (String sku : skus) {
+            if (!resultado.containsKey(sku)) {
+                consultarPrecio(sku).ifPresent(precio -> resultado.put(sku, precio));
+            }
+        }
+        return resultado;
+    }
+
+    /**
      * Disponibilidad comercial, sin cantidades.
      *
      * <p>G6: {@code GET /inventario/disponibilidad}. Productos no expone saldos a los canales
      * (X-P0-03), asi que esto devuelve un estado, nunca un numero de unidades.</p>
      */
     List<DisponibilidadComercial> consultarDisponibilidad(List<String> skus);
+
+    /**
+     * Nombre de cada marca por su {@code marca_id} (G6: {@code GET /marcas}). Vacío si la fuente no publica
+     * nombres o no responde: el catálogo muestra entonces el id.
+     */
+    /**
+     * Variantes de varios productos, por id de producto y en el mismo orden. El adaptador real las
+     * pide en paralelo; esta versión, una tras otra.
+     */
+    default Map<String, List<VarianteComercial>> variantesDe(List<String> productoIds) {
+        Map<String, List<VarianteComercial>> resultado = new java.util.LinkedHashMap<>();
+        for (String id : productoIds) {
+            resultado.computeIfAbsent(id, this::listarVariantes);
+        }
+        return resultado;
+    }
+
+    default Map<String, String> nombresDeMarcas() {
+        return Map.of();
+    }
+
+    /** Nombre de cada categoría por su {@code categoria_id} (G6: {@code GET /categorias}). */
+    default Map<String, String> nombresDeCategorias() {
+        return Map.of();
+    }
 }

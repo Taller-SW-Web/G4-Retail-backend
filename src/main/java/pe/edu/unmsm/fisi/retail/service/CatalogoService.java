@@ -11,6 +11,7 @@ import pe.edu.unmsm.fisi.retail.integracion.productos.ProductosPort;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.DisponibilidadComercial;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.FiltroCatalogo;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.PaginaProductos;
+import pe.edu.unmsm.fisi.retail.integracion.productos.dto.Precio;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.ProductoComercial;
 import pe.edu.unmsm.fisi.retail.integracion.productos.dto.VarianteComercial;
 
@@ -54,25 +55,30 @@ public class CatalogoService {
     public CatalogoResponse buscar(String q, String categoria, String disciplina, String marca,
                                    int page, int size) {
         String categoriaEfectiva = primeroNoVacio(categoria, disciplina);
-        FiltroCatalogo filtro = FiltroCatalogo.desdePaginacionRetail(
-                normalizarFiltro(q), normalizarFiltro(categoriaEfectiva), normalizarFiltro(marca), page, size);
+        Map<String, String> marcas = productos.nombresDeMarcas();
+        Map<String, String> categorias = productos.nombresDeCategorias();
+        FiltroCatalogo filtro = FiltroCatalogo.desdePaginacionRetail(normalizarFiltro(q),
+                idDe(normalizarFiltro(categoriaEfectiva), categorias), idDe(normalizarFiltro(marca), marcas), page, size);
 
         PaginaProductos pagina = productos.listarProductos(filtro);
         if (pagina.items().isEmpty()) {
             return CatalogoResponse.vacia(page, size);
         }
 
-        // Las variantes son una llamada aparte por producto; la disponibilidad, una sola para toda
-        // la pagina. Resolverla por SKU multiplicaria los viajes a G6 justo con la cola esperando.
-        Map<String, List<VarianteComercial>> variantesPorProducto = new LinkedHashMap<>();
-        for (ProductoComercial producto : pagina.items()) {
-            variantesPorProducto.put(producto.productId(), productos.listarVariantes(producto.productId()));
-        }
+        // Las variantes son una llamada aparte por producto (en paralelo, ver ProductosHttp); la
+        // disponibilidad, una sola para toda la pagina. Resolverla por SKU multiplicaria los viajes a G6.
+        Map<String, List<VarianteComercial>> variantesPorProducto = productos.variantesDe(
+                pagina.items().stream().map(ProductoComercial::productId).toList());
         Map<String, VarianteResponse.Disponibilidad> estados = consultarEstados(
                 variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
 
+        // Los precios tambien van en lote: uno por SKU eran cientos de llamadas y el APIM de G6 las corta con 429.
+        Map<String, Precio> precios = productos.preciosDe(
+                variantesPorProducto.values().stream().flatMap(List::stream).map(VarianteComercial::sku).toList());
+
         List<ProductoCatalogoResponse> items = pagina.items().stream()
-                .map(producto -> armarProducto(producto, variantesPorProducto.get(producto.productId()), estados))
+                .map(producto -> armarProducto(producto, variantesPorProducto.get(producto.productId()), estados,
+                        precios, marcas, categorias))
                 .toList();
 
         return new CatalogoResponse(items, page, size, pagina.total());
@@ -104,7 +110,8 @@ public class CatalogoService {
                 .findFirst()
                 .orElseThrow(() -> noEncontrado(leido));
 
-        VarianteResponse respuesta = armarVariante(variante, consultarEstados(List.of(sku)));
+        VarianteResponse respuesta = armarVariante(variante, consultarEstados(List.of(sku)),
+                productos.preciosDe(List.of(sku)));
         return new CodigoBarrasResponse(leido, producto.productId(), producto.name(),
                 respuesta.precio(), respuesta);
     }
@@ -126,16 +133,19 @@ public class CatalogoService {
 
     private ProductoCatalogoResponse armarProducto(ProductoComercial producto,
                                                    List<VarianteComercial> variantes,
-                                                   Map<String, VarianteResponse.Disponibilidad> estados) {
+                                                   Map<String, VarianteResponse.Disponibilidad> estados,
+                                                   Map<String, Precio> precios,
+                                                   Map<String, String> marcas, Map<String, String> categorias) {
+        String categoria = nombreDe(producto.categoriaId(), categorias);
         List<VarianteResponse> armadas = variantes.stream()
-                .map(variante -> armarVariante(variante, estados))
+                .map(variante -> armarVariante(variante, estados, precios))
                 .toList();
         return new ProductoCatalogoResponse(
                 producto.productId(),
                 producto.name(),
-                producto.marcaId(),
-                producto.categoriaId(),
-                producto.categoriaId(),
+                nombreDe(producto.marcaId(), marcas),
+                categoria,
+                categoria,
                 ProductoCatalogoResponse.precioDesde(armadas),
                 producto.images().isEmpty() ? null : producto.images().get(0),
                 armadas);
@@ -153,10 +163,10 @@ public class CatalogoService {
      * que ningun sistema esta informando todavia.</p>
      */
     private VarianteResponse armarVariante(VarianteComercial variante,
-                                           Map<String, VarianteResponse.Disponibilidad> estados) {
-        BigDecimal precio = productos.consultarPrecio(variante.sku())
-                .map(p -> p.precioEfectivo())
-                .orElse(null);
+                                           Map<String, VarianteResponse.Disponibilidad> estados,
+                                           Map<String, Precio> precios) {
+        Precio vigente = precios.get(variante.sku());
+        BigDecimal precio = vigente == null ? null : vigente.precioEfectivo();
         return new VarianteResponse(
                 variante.sku(),
                 variante.atributo("Talla").orElse(null),
@@ -208,5 +218,25 @@ public class CatalogoService {
     /** Un filtro en blanco es un filtro ausente: el buscador vacio no debe filtrar por cadena vacia. */
     private String normalizarFiltro(String valor) {
         return (valor == null || valor.isBlank()) ? null : valor.trim();
+    }
+
+    /** Nombre publicado por G6 para ese id; si no lo hay, el id tal cual. */
+    private static String nombreDe(String id, Map<String, String> nombres) {
+        return id == null ? null : nombres.getOrDefault(id, id);
+    }
+
+    /**
+     * El POS filtra por lo que muestra (el nombre), pero G6 filtra por id: traduce el nombre a su id
+     * sin distinguir mayúsculas. Un valor que ya es id, o que no figura, se envía tal cual.
+     */
+    private static String idDe(String valor, Map<String, String> nombres) {
+        if (valor == null) {
+            return null;
+        }
+        return nombres.entrySet().stream()
+                .filter(e -> e.getValue().equalsIgnoreCase(valor))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(valor);
     }
 }

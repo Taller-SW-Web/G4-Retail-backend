@@ -315,6 +315,27 @@ Registra la trazabilidad operativa del mostrador: apertura de turno, ventas y ci
 
 ---
 
+### Tabla 10: `RET_OUTBOX_EVENTO` (S14, contrato v0.5 §2.9)
+Outbox transaccional del mecanismo asíncrono entre microservicios. El servicio de negocio guarda el evento en la **misma transacción** que su cambio, y un job lo envía al módulo destino con reintentos y espera creciente. Primer uso: el reporte de incidencias de F12 a Inventory de G6. Se crea con `diseño_bd/migracion-s14-outbox.sql`.
+
+| Campo | Tipo SQL | Nulo | Restricciones / Valores | Descripción |
+| :--- | :--- | :---: | :--- | :--- |
+| `id` | `UUID` | No | `PRIMARY KEY` | Identificador del evento |
+| `tipo_evento` | `VARCHAR(60)` | No | `UNIQUE (tipo_evento, agregado_id)` | `INCIDENCIA_INVENTARIO_REPORTADA` |
+| `agregado_id` | `VARCHAR(100)` | No | — | Id del recurso de Retail (`incidenciaId`); también es la `Idempotency-Key` hacia el destino |
+| `destino` | `VARCHAR(30)` | No | — | Módulo destino: `PRODUCTOS_G6` |
+| `payload` | `TEXT` | No | — | Cuerpo JSON exacto que se envía |
+| `estado` | `VARCHAR(20)` | No | `CHECK IN ('PENDIENTE', 'ENVIADO', 'FALLIDO')` | Estado del envío |
+| `intentos` | `INTEGER` | No | `DEFAULT 0`, `>= 0` | Envíos intentados |
+| `proximo_intento` | `TIMESTAMPTZ` | No | — | Cuándo vuelve a tomarlo el job |
+| `ultimo_error` | `TEXT` | Sí | — | Motivo del último fallo |
+| `referencia_externa` | `VARCHAR(100)` | Sí | — | Id que devolvió el destino (`incidenciaInventoryId`) |
+| `correlation_id` | `VARCHAR(64)` | Sí | — | `X-Correlation-Id` de la petición de origen |
+| `creado_en` | `TIMESTAMPTZ` | No | — | Registro del evento |
+| `enviado_en` | `TIMESTAMPTZ` | Sí | Obligatorio si `estado = 'ENVIADO'` | Aceptación por el destino |
+
+---
+
 ## 4. Índices de Rendimiento Recomendados
 
 ```sql

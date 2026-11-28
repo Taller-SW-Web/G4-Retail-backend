@@ -63,6 +63,7 @@ public class SeguridadConfig {
     }
 
     @Bean
+    @SuppressWarnings("java:S4502") // API REST stateless con JWT: CSRF no aplica (sin cookies de sesion)
     public SecurityFilterChain cadenaDeFiltros(HttpSecurity http) throws Exception {
         return http
                 // La API no usa cookies de sesion, asi que CSRF no aplica: el token viaja en la cabecera.
@@ -159,7 +160,6 @@ public class SeguridadConfig {
     }
 
     private String correlacion(HttpServletRequest peticion) {
-        String recibido = peticion.getHeader("X-Correlation-Id");
-        return (recibido == null || recibido.isBlank()) ? UUID.randomUUID().toString() : recibido;
+        return pe.edu.unmsm.fisi.retail.config.gestionapi.Correlacion.de(peticion);
     }
 }

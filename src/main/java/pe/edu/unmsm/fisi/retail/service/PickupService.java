@@ -103,6 +103,14 @@ public class PickupService {
         return constancia;
     }
 
+    /**
+     * Código de sucursal ({@code TIENDA-...}) del vendedor, con las mismas reglas que la bandeja.
+     * Lo reutiliza la torre de control (F11) para no duplicar la resolución del perfil.
+     */
+    public String codigoSucursalDe(UUID usuarioId) {
+        return tiendaDe(usuarioId);
+    }
+
     private static boolean tieneDni(PedidoPickupResponse pedido) {
         return pedido.clienteDni() != null && !pedido.clienteDni().isBlank();
     }

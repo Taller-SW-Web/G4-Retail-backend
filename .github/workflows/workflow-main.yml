@@ -1,31 +1,62 @@
+# Wrapper de CD: develop solo verifica; main valida todo y despliega/publica solo con gate GO.
+# La orquestacion completa vive en devsecops-templates/workflow-deploy.yml.
 name: Production Deploy
-run-name: CD | ${{ inputs.rollback && 'Rollback' || 'Deployment' }}
+run-name: CD | ${{ inputs.rollback && 'Rollback' || (github.ref == 'refs/heads/main' && 'Production Release' || 'Develop Verification') }}
 'on':
   push:
-    branches:
-    - main
-    paths-ignore:
-    - '.github/**'
+    branches: [develop, main]
   workflow_dispatch:
     inputs:
       rollback:
         description: Restore the production tag selected in Use workflow from (retail-operator team required)
         type: boolean
         default: false
+      version_override:
+        description: Optional SemVer vX.Y.Z override for release (main only)
+        type: string
+        default: ''
 permissions:
   contents: write
   actions: read
+  security-events: write
+  pull-requests: write
+concurrency:
+  group: cd-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   delivery:
-    name: Despliegue a producción
+    name: Delivery
     uses: Taller-SW-Web/devsecops-templates/.github/workflows/workflow-deploy.yml@main
     with:
       component_name: ms-retail-backend
       technology: maven
+      language: java
       sonar_host_url: ${{ vars.SONAR_HOST_URL }}
       rollback: ${{ inputs.rollback || false }}
+      version_override: ${{ inputs.version_override || '' }}
       release_tag: ${{ inputs.rollback && github.ref_type == 'tag' && github.ref_name || '' }}
       healthcheck_url: ${{ vars.PRODUCTION_HEALTHCHECK_URL }}
+      app_jar_pattern: retail-*.jar
+      app_health_path: /api/v1/retail/health
+      app_boot_args: >-
+        --spring.profiles.active=local,mock
+        --retail.seguridad.jwks-uri=http://127.0.0.1:9/jwks
+        --retail.integracion.g7.token-url=http://127.0.0.1:9/token
+        --retail.integracion.ventas.url=http://127.0.0.1:9
+        --retail.integracion.ventas.habilitado=false
+        --retail.integracion.ventas.pickup.modo=memoria
+        --retail.integracion.ventas.pedidos.modo=memoria
+        --spring.jpa.show-sql=false
+        --logging.level.pe.edu.unmsm.fisi.retail=WARN
+      integration_script: scripts/ci/integracion.sh
+      integration_postgres_db: retail_s14
+      integration_report_paths: |
+        target/integration-reports/
+        target/postgres-reports/
+      performance_script: scripts/performance/pos.mjs
+      dast_token_script: scripts/dast/token-prueba.mjs
+      dast_preflight_path: /api/v1/retail/perfil
+      dast_summary_script: scripts/dast/resumir-zap.mjs
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       GH_TOKEN_G4: ${{ secrets.GH_TOKEN_G4 }}
