@@ -40,6 +40,7 @@ class PoliticaPlazoCambioTest {
         var evaluacion = politica.evaluar(Instant.parse("2026-10-31T15:00:00Z"));
 
         assertThat(evaluacion.diasTranscurridos()).isEqualTo(7);
+        // El cambio sigue permitido al cumplir exactamente siete días.
         assertThat(evaluacion.plazoValido()).isTrue();
     }
 
