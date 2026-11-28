@@ -20,6 +20,9 @@ public record VentasCrearPedidoRequest(
         Envio envio,
         Pago pago
 ) {
+    /** Cliente "Clientes varios" para la venta sin cliente identificado; G5 exige {@code contacto.clienteId}. */
+    public static final UUID CLIENTE_GENERICO_ID = UUID.fromString("00000000-0000-4000-8000-00000000f00a");
+
     public record Contacto(
             UUID clienteId,
             String nombreCompleto,
