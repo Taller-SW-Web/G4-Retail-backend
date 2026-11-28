@@ -61,7 +61,7 @@ class CarritoControllerTest {
                 List.of()
         );
 
-        given(carritoService.calcularTotales(any())).willReturn(responseMock);
+        given(carritoService.calcularTotales(any(), any())).willReturn(responseMock);
 
         var request = new CalculoCarritoRequest(
                 List.of(new CalculoCarritoRequest.ItemCarritoCalculoDto("CAM-RUN-M", 2, new BigDecimal("50.00"))),

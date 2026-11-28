@@ -20,6 +20,9 @@ public record VentasCrearPedidoRequest(
         Envio envio,
         Pago pago
 ) {
+    /** Cliente "Clientes varios" para la venta sin cliente identificado; G5 exige {@code contacto.clienteId}. */
+    public static final UUID CLIENTE_GENERICO_ID = UUID.fromString("00000000-0000-4000-8000-00000000f00a");
+
     public record Contacto(
             UUID clienteId,
             String nombreCompleto,
@@ -56,6 +59,12 @@ public record VentasCrearPedidoRequest(
             String tiendaId
     ) {}
 
+    /**
+     * Pago del pedido. Los tres ultimos campos solo los usa el cambio de prenda de F9 (contrato 5.9,
+     * acuerdo con G5 del 26/11): con {@code metodoPago = CREDITO_CAMBIO}, el credito de la prenda devuelta,
+     * el pedido de origen y lo devuelto, para que Postventa la reintegre. En una venta normal van nulos y
+     * no se envian.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Pago(
             String metodoPago,
@@ -68,8 +77,19 @@ public record VentasCrearPedidoRequest(
             String comprobanteReferencia,
             BigDecimal montoEfectivo,
             BigDecimal montoTarjeta,
-            OffsetDateTime fechaVenta
+            OffsetDateTime fechaVenta,
+            BigDecimal montoCreditoCambio,
+            String pedidoOrigenId,
+            List<ItemDevuelto> itemsDevueltos
     ) {
+        public Pago(String metodoPago, String moneda, BigDecimal subtotal, BigDecimal descuentoCupon,
+                    BigDecimal costoEnvio, BigDecimal total, String referenciaOperacion,
+                    String comprobanteReferencia, BigDecimal montoEfectivo, BigDecimal montoTarjeta,
+                    OffsetDateTime fechaVenta) {
+            this(metodoPago, moneda, subtotal, descuentoCupon, costoEnvio, total, referenciaOperacion,
+                    comprobanteReferencia, montoEfectivo, montoTarjeta, fechaVenta, null, null, null);
+        }
+
         public Pago(String metodoPago, String moneda, BigDecimal subtotal, BigDecimal descuentoCupon,
                     BigDecimal costoEnvio, BigDecimal total, String referenciaOperacion,
                     BigDecimal montoEfectivo, BigDecimal montoTarjeta, OffsetDateTime fechaVenta) {
@@ -77,4 +97,7 @@ public record VentasCrearPedidoRequest(
                     null, montoEfectivo, montoTarjeta, fechaVenta);
         }
     }
+
+    /** Prenda que el cliente devuelve en un cambio. */
+    public record ItemDevuelto(String sku, int cantidad) {}
 }

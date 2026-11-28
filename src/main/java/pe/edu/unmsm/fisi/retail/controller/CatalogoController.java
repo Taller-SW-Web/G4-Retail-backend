@@ -1,6 +1,8 @@
 package pe.edu.unmsm.fisi.retail.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,6 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 import pe.edu.unmsm.fisi.retail.dto.CatalogoResponse;
 import pe.edu.unmsm.fisi.retail.dto.CodigoBarrasResponse;
 import pe.edu.unmsm.fisi.retail.service.CatalogoService;
+
+import java.util.UUID;
 
 /**
  * Catalogo de prendas y lectura por codigo de barras (F2: RF-04, RF-05 y RF-06).
@@ -45,8 +49,9 @@ public class CatalogoController {
             @RequestParam(required = false) String disciplina,
             @RequestParam(required = false) String marca,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = TAMANIO_POR_DEFECTO) int size) {
-        return catalogoService.buscar(q, categoria, disciplina, marca, page, size);
+            @RequestParam(defaultValue = TAMANIO_POR_DEFECTO) int size,
+            @AuthenticationPrincipal Jwt token) {
+        return catalogoService.buscar(q, categoria, disciplina, marca, page, size, usuarioDe(token));
     }
 
     /**
@@ -57,7 +62,20 @@ public class CatalogoController {
      * corresponde a ningun articulo del catalogo.</p>
      */
     @GetMapping("/codigo-barras/{codigo}")
-    public CodigoBarrasResponse resolverCodigoBarras(@PathVariable String codigo) {
-        return catalogoService.resolverCodigoBarras(codigo);
+    public CodigoBarrasResponse resolverCodigoBarras(@PathVariable String codigo,
+                                                     @AuthenticationPrincipal Jwt token) {
+        return catalogoService.resolverCodigoBarras(codigo, usuarioDe(token));
+    }
+
+    /**
+     * Vendedor del token, para marcar {@code enCuarentena} con la cuarentena de su tienda (F12, RF-33).
+     * Sin token o con un {@code sub} que no es UUID, el catalogo se sirve igual, sin cuarentena.
+     */
+    private static UUID usuarioDe(Jwt token) {
+        try {
+            return token == null || token.getSubject() == null ? null : UUID.fromString(token.getSubject());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }

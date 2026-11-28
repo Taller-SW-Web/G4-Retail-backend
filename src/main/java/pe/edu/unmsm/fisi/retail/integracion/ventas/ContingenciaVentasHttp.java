@@ -2,6 +2,7 @@ package pe.edu.unmsm.fisi.retail.integracion.ventas;
 
 import pe.edu.unmsm.fisi.retail.config.gestionapi.CorrelacionSaliente;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -31,6 +32,7 @@ public class ContingenciaVentasHttp implements ContingenciaVentasPort {
     private final TokenServicioG7 token;
     private final CodigosSucursal codigosSucursal;
 
+    @Autowired
     public ContingenciaVentasHttp(
             @Value("${retail.integracion.ventas.url:https://g5-servicio-ventas.onrender.com}") String base,
             @Value("${retail.integracion.ventas.timeout-ms:3500}") int timeout,
@@ -45,6 +47,13 @@ public class ContingenciaVentasHttp implements ContingenciaVentasPort {
         this.codigosSucursal = codigosSucursal;
     }
 
+    /** Constructor para tests que permite inyectar un RestClient simulado. */
+    ContingenciaVentasHttp(RestClient http, TokenServicioG7 token, CodigosSucursal codigosSucursal) {
+        this.http = http;
+        this.token = token;
+        this.codigosSucursal = codigosSucursal;
+    }
+
     @Override
     public String registrar(VentaOffline v, String tienda, String clave, String comprobante) {
         // El contrato F10 no transporta datos de identidad/factura: no se inventan documentos.
@@ -52,8 +61,9 @@ public class ContingenciaVentasHttp implements ContingenciaVentasPort {
             throw new ReglaNegocioException("IDENTIFICACION_REQUIERE_REVISION", "Debe conciliar la identidad el supervisor");
         }
 
+        // G5 exige contacto.clienteId (400 DATOS_INVALIDOS si es nulo): "Clientes varios", como en F5 (§5.10).
         VentasCrearPedidoRequest.Contacto contacto = new VentasCrearPedidoRequest.Contacto(
-                null,
+                VentasCrearPedidoRequest.CLIENTE_GENERICO_ID,
                 "CLIENTE CONTINGENCIA",
                 "DNI",
                 "00000000",

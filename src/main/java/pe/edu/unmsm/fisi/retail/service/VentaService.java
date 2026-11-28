@@ -601,9 +601,9 @@ public class VentaService {
         try {
             clienteUuid = (request.clienteId() != null && !request.clienteId().isBlank())
                     ? UUID.fromString(request.clienteId())
-                    : UUID.fromString("00000000-0000-4000-8000-00000000f00a");
+                    : VentasCrearPedidoRequest.CLIENTE_GENERICO_ID;
         } catch (IllegalArgumentException e) {
-            clienteUuid = UUID.fromString("00000000-0000-4000-8000-00000000f00a");
+            clienteUuid = VentasCrearPedidoRequest.CLIENTE_GENERICO_ID;
         }
 
         String nombreCliente = (request.comprobante().razonSocial() != null && !request.comprobante().razonSocial().isBlank())

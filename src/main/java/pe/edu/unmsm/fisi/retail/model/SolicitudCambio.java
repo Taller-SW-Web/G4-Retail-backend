@@ -96,7 +96,7 @@ public class SolicitudCambio {
     @Column(name = "estado_aprobacion", nullable = false, length = 30)
     private EstadoAprobacionCambio estadoAprobacion;
 
-    /** Codigo del vale emitido como compensacion. */
+    /** Codigo del vale de la Semana 11. El cambio directo no emite vales: queda nulo. */
     @Column(name = "vale_temporal_codigo", length = 50)
     private String valeTemporalCodigo;
 
@@ -112,6 +112,55 @@ public class SolicitudCambio {
 
     @Column(name = "fecha_inspeccion", nullable = false)
     private OffsetDateTime fechaInspeccion;
+
+    // ---- Cambio directo (Semana 14, contrato 5.9). Nulos en las filas del vale de la Semana 11. ----
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_cambio", length = 20)
+    private TipoCambio tipoCambio;
+
+    /** CAMB-2026-000123, correlativo por año y tienda. */
+    @Column(name = "numero_constancia", length = 20)
+    private String numeroConstancia;
+
+    /** Lo que el cliente pago por las unidades devueltas, segun RET_VENTA. */
+    @Column(name = "monto_credito", precision = 12, scale = 2)
+    private BigDecimal montoCredito;
+
+    /** Precio vigente de las prendas nuevas, sin cupon. */
+    @Column(name = "total_nuevo", precision = 12, scale = 2)
+    private BigDecimal totalNuevo;
+
+    /** Lo que se cobro: 0 en mismo valor. */
+    @Column(name = "diferencia", precision = 12, scale = 2)
+    private BigDecimal diferencia;
+
+    /** Pedido creado en Ventas por el cambio; nulo mientras esta PENDIENTE. */
+    @Column(name = "pedido_id_nuevo", columnDefinition = "text")
+    private String pedidoIdNuevo;
+
+    /** Boleta de las prendas nuevas, solo en mayor valor. */
+    @Column(name = "venta_nueva_id")
+    private UUID ventaNuevaId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado_inventario", length = 20)
+    private EstadoInventarioCambio estadoInventario;
+
+    /** Pedido para Ventas en JSON, que el job reenvia mientras el cambio esta PENDIENTE. */
+    @Column(name = "pedido_pendiente", columnDefinition = "text")
+    private String pedidoPendiente;
+
+    @Column(name = "intentos_envio", nullable = false)
+    private int intentosEnvio;
+
+    /** Huella de la peticion: la misma clave con otra peticion es un conflicto, no un reintento. */
+    @Column(name = "huella", length = 64)
+    private String huella;
+
+    /** Respuesta 201 en JSON: un reintento con la misma clave devuelve exactamente esto. */
+    @Column(name = "respuesta", columnDefinition = "text")
+    private String respuesta;
 
     @PrePersist
     void alCrear() {

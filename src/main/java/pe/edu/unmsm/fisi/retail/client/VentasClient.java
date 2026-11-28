@@ -11,6 +11,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasCrearPedidoRequest;
 import pe.edu.unmsm.fisi.retail.client.dto.VentasPedidoResponse;
+import pe.edu.unmsm.fisi.retail.integracion.cambios.ResultadoPedidoCambio;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.web.client.RestClientResponseException;
 import pe.edu.unmsm.fisi.retail.integracion.seguridad.TokenServicioG7;
 
 import java.time.Duration;
@@ -109,5 +113,56 @@ public class VentasClient {
             log.warn("Fallo en la comunicación con Ventas (activando fallback local): {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Envia el pedido de un cambio de prenda (F9, contrato 5.9).
+     *
+     * <p>A diferencia de {@link #crearPedido}, distingue un rechazo de Ventas ({@code 4xx}, por ejemplo
+     * {@code PEDIDO_ORIGEN_NO_ENTREGADO}) de una caida: el rechazo no se reintenta y la caida si.</p>
+     */
+    public ResultadoPedidoCambio crearPedidoCambio(VentasCrearPedidoRequest request, String idempotencyKey) {
+        if (!habilitado) {
+            return new ResultadoPedidoCambio.NoDisponible("Integracion con Ventas deshabilitada");
+        }
+        try {
+            VentasPedidoResponse respuesta = restClient.post()
+                    .uri("/api/v1/pedidos")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .headers(headers -> {
+                        if (tokenServicio != null && tokenServicio.configurado()) {
+                            headers.setBearerAuth(tokenServicio.obtener());
+                        }
+                    })
+                    .body(request)
+                    .retrieve()
+                    .body(VentasPedidoResponse.class);
+            if (respuesta == null || respuesta.pedidoId() == null || respuesta.pedidoId().isBlank()) {
+                return new ResultadoPedidoCambio.NoDisponible("Ventas respondio sin pedidoId");
+            }
+            return new ResultadoPedidoCambio.Confirmado(respuesta.pedidoId(), respuesta.estado());
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is4xxClientError()) {
+                return new ResultadoPedidoCambio.Rechazado(codigoDe(e.getResponseBodyAsString()), e.getStatusText());
+            }
+            log.warn("Ventas fallo al registrar el pedido del cambio: {}", e.getStatusCode());
+            return new ResultadoPedidoCambio.NoDisponible("Ventas respondio " + e.getStatusCode().value());
+        } catch (Exception e) {
+            log.warn("Sin respuesta de Ventas para el pedido del cambio: {}", e.getMessage());
+            return new ResultadoPedidoCambio.NoDisponible(e.getMessage());
+        }
+    }
+
+    /** Lee el {@code code} de un problem+json; si no viene, el rechazo queda como {@code RECHAZADO_POR_VENTAS}. */
+    private static String codigoDe(String cuerpo) {
+        try {
+            JsonNode nodo = new ObjectMapper().readTree(cuerpo);
+            if (nodo != null && nodo.hasNonNull("code")) {
+                return nodo.get("code").asText();
+            }
+        } catch (Exception ignorado) {
+            // cuerpo vacio o que no es JSON
+        }
+        return "RECHAZADO_POR_VENTAS";
     }
 }

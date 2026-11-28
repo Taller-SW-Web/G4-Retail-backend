@@ -68,7 +68,7 @@ class SeguridadConfigTest {
     @BeforeEach
     void configurarDecodificador() {
         String jwksUri = "http://127.0.0.1:" + servidorJwks.getAddress().getPort() + "/jwks";
-        decodificador = new SeguridadConfig(CLAVE_MOCK, jwksUri, new ObjectMapper()).decodificadorDeToken();
+        decodificador = new SeguridadConfig(CLAVE_MOCK, true, jwksUri, new ObjectMapper()).decodificadorDeToken();
     }
 
     @Test
@@ -78,6 +78,28 @@ class SeguridadConfigTest {
         token.sign(new MACSigner(CLAVE_MOCK.getBytes(StandardCharsets.UTF_8)));
 
         assertThat(decodificador.decode(token.serialize()).getSubject()).isEqualTo(USUARIO_ID);
+    }
+
+    @Test
+    @DisplayName("Fuera del perfil local rechaza el token HMAC firmado con la clave de desarrollo")
+    void rechazaTokenHmacEnLaNube() throws JOSEException {
+        JwtDecoder nube = decodificadorDeLaNube();
+        SignedJWT token = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims(expiracionValida()));
+        token.sign(new MACSigner(CLAVE_MOCK.getBytes(StandardCharsets.UTF_8)));
+
+        assertThatThrownBy(() -> nube.decode(token.serialize())).isInstanceOf(BadJwtException.class);
+    }
+
+    @Test
+    @DisplayName("Fuera del perfil local sigue aceptando el token RS256 de G7")
+    void aceptaRs256EnLaNube() throws JOSEException {
+        assertThat(decodificadorDeLaNube().decode(tokenRs256(claveG7, expiracionValida())).getSubject())
+                .isEqualTo(USUARIO_ID);
+    }
+
+    private static JwtDecoder decodificadorDeLaNube() {
+        String jwksUri = "http://127.0.0.1:" + servidorJwks.getAddress().getPort() + "/jwks";
+        return new SeguridadConfig(CLAVE_MOCK, false, jwksUri, new ObjectMapper()).decodificadorDeToken();
     }
 
     @Test
