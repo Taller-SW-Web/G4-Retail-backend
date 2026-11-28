@@ -56,6 +56,9 @@ import java.util.function.Supplier;
  * <ul>
  *   <li>las variantes de una página y los tramos de disponibilidad se piden <strong>en paralelo</strong>,
  *   con un máximo de {@code paralelismo} llamadas simultáneas a G6;</li>
+ *   <li>los precios de una página se piden <strong>en lote</strong> ({@code GET /precios?skus=}, hasta
+ *   100 SKU por llamada) y no uno por SKU: el APIM de G6 limita las llamadas por cliente y responde
+ *   {@code 429} si se le piden cientos seguidas (visto en producción el 27/11);</li>
  *   <li>la lista de productos, las variantes y la disponibilidad se sirven desde caché aunque hayan
  *   vencido (hasta {@link #ANTIGUEDAD_MAXIMA}) mientras se refrescan en segundo plano, así el vendedor
  *   no espera a G6 cada vez que vence la caché. Las variantes casi no cambian y viven más
@@ -229,6 +232,78 @@ public class ProductosHttp implements ProductosPort {
         });
     }
 
+    /**
+     * Precios de varios SKU con {@code GET /precios?skus=a,b&canal=RETAIL}, en tramos de 100 y en
+     * paralelo. Usa la misma caché que {@link #consultarPrecio}: lo vigente no se vuelve a pedir, lo
+     * vencido hace poco se devuelve y se refresca en segundo plano, y solo lo que falta se espera.
+     */
+    @Override
+    public Map<String, Precio> preciosDe(List<String> skus) {
+        Instant ahora = reloj.instant();
+        Map<String, Precio> resultado = new LinkedHashMap<>();
+        List<String> faltan = new ArrayList<>();
+        List<String> vencidos = new ArrayList<>();
+        for (String sku : new java.util.LinkedHashSet<>(skus)) {
+            EnCache<Optional<Precio>> guardado = cachePrecios.get(sku);
+            if (guardado == null || !ahora.isBefore(guardado.venceEn().plus(ANTIGUEDAD_MAXIMA))) {
+                faltan.add(sku);
+                continue;
+            }
+            guardado.valor().ifPresent(precio -> resultado.put(sku, precio));
+            if (!ahora.isBefore(guardado.venceEn())) {
+                vencidos.add(sku);
+            }
+        }
+        if (!vencidos.isEmpty() && refrescando.add("precios:" + String.join(",", vencidos))) {
+            String marca = "precios:" + String.join(",", vencidos);
+            ejecutor.execute(() -> {
+                try {
+                    cargarPrecios(vencidos);
+                } catch (RuntimeException e) {
+                    log.warn("No se pudo refrescar la caché de precios de Productos (G6): {}", e.getMessage());
+                } finally {
+                    refrescando.remove(marca);
+                }
+            });
+        }
+        if (!faltan.isEmpty()) {
+            Map<String, Precio> cargados = cargarPrecios(faltan);
+            for (String sku : faltan) {
+                Precio precio = cargados.get(sku);
+                if (precio != null) {
+                    resultado.put(sku, precio);
+                }
+            }
+        }
+        return resultado;
+    }
+
+    private Map<String, Precio> cargarPrecios(List<String> skus) {
+        List<CompletableFuture<List<Precio>>> tramos = new ArrayList<>();
+        for (int i = 0; i < skus.size(); i += MAXIMO_SKUS) {
+            List<String> tramo = List.copyOf(skus.subList(i, Math.min(i + MAXIMO_SKUS, skus.size())));
+            tramos.add(CompletableFuture.supplyAsync(() -> llamar("consultar los precios", () -> {
+                RespuestaPrecios respuesta = restClient.get()
+                        .uri(uri -> uri.path("/precios").queryParam("skus", String.join(",", tramo))
+                                .queryParam("canal", CANAL).build())
+                        .header(HttpHeaders.AUTHORIZATION, bearer())
+                        .accept(MediaType.APPLICATION_JSON)
+                        .retrieve()
+                        .body(RespuestaPrecios.class);
+                return respuesta == null || respuesta.items() == null ? List.<Precio>of() : respuesta.items();
+            }), ejecutor));
+        }
+        Map<String, Precio> porSku = new LinkedHashMap<>();
+        tramos.forEach(tramo -> esperar(tramo).stream()
+                .filter(precio -> precio != null && precio.sku() != null)
+                .forEach(precio -> porSku.put(precio.sku(), precio)));
+        Instant vence = reloj.instant().plus(ttl);
+        for (String sku : skus) {
+            cachePrecios.put(sku, new EnCache<>(Optional.ofNullable(porSku.get(sku)), vence));
+        }
+        return porSku;
+    }
+
     /** Espera una llamada en paralelo y devuelve su error tal cual, sin el envoltorio del futuro. */
     private static <T> T esperar(CompletableFuture<T> futura) {
         try {
@@ -364,6 +439,11 @@ public class ProductosHttp implements ProductosPort {
     /** {@code ResolverCodigoBarrasResponse} de G6. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record RespuestaCodigo(@JsonProperty("sku") String sku) {
+    }
+
+    /** {@code ConsultaPrecios} de G6 ({@code GET /precios}). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record RespuestaPrecios(@JsonProperty("items") List<Precio> items) {
     }
 
     /** {@code ConsultaDisponibilidadComercialResponse} de G6. */
