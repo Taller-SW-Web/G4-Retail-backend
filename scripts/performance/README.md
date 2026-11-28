@@ -28,6 +28,14 @@ Si falla el preflight se guarda su diagnóstico, sin reportar una medición apro
 
 ## Diseño de la medición
 
+### Límite de solicitudes y protección de G5
+
+El rate limit normal del backend **permanece habilitado** durante las pruebas; no se debe modificar temporalmente para conseguir una medición artificial. Cada vendedor admite 120 solicitudes/minuto y G5 admite 300 solicitudes/minuto compartidas entre todas las cajas. El generador serializa el inicio de cada solicitud en una cola global y limita a `min(PERF_MAX_RPM, PERF_VENDOR_MAX_RPM)`: en modo externo usa 120 RPM por defecto (5 segundos entre inicios), no 300, para respetar el límite del vendedor. El máximo absoluto configurable es 300 RPM, pero elevarlo requiere coordinar ventanas y carga de todos los vendedores; cambiar una variable no eleva la cuota real de G5 ni la del vendedor.
+
+Para una medición externa, no habilitar concurrencia distribuida ni ejecutar otra prueba simultánea con el mismo vendedor. El generador reporta RPM configuradas, p95/p99, RPS alcanzado y errores. La tasa es un límite de inicio de solicitudes agregado a todos los workers/endpoints del proceso; no representa una tasa constante de llegada.
+
+Variables: `PERF_MAX_RPM` (default externo 240, local 120), `PERF_VENDOR_MAX_RPM` (default 120; máximo permitido 300). Efectivo = el menor de ambos. Por tanto externo queda por defecto a **120 RPM** debido al límite por vendedor. No existe bypass de rate limit de la aplicación.
+
 - Calentamiento de 5 segundos excluido de estadísticas.
 - Etapas de 1, 5 y 10 usuarios, 20 segundos por etapa; mezcla equitativa de tres endpoints.
 - Modelo cerrado, pausa de 50 ms y timeout de 5 segundos por petición.
